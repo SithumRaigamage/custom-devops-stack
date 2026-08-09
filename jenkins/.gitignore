@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+
+# Jenkins data
+jenkins_home/
+jenkins_sonar_cache/
+
+# SSH keys and sensitive files
+jenkins_key
+jenkins_key.pub
+identity.key.enc
+
+# Logs
+*.log
+
+# Docker
+*.pid
+
+# VS Code
+.vscode/
+
+# Node modules
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+
+# Misc
+*.swp
+*.swo

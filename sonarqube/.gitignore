@@ -1,0 +1,46 @@
+# Ignore macOS system files
+.DS_Store
+
+# Node modules
+node_modules/
+
+# Logs
+logs/
+*.log
+
+# Dependency directories
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Python
+__pycache__/
+*.pyc
+
+# Java
+*.class
+
+# VS Code
+.vscode/
+
+# SonarQube
+.data/
+.temp/
+extensions/downloads/
+web/deploy/plugins/
+
+# PostgreSQL
+data/
+postgresql/
+
+# Docker
+*.pid
+*.sock
+
+# Other
+.env
+.env.*
+
+temp/

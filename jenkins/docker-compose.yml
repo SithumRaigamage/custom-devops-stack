@@ -1,0 +1,48 @@
+services:
+  jenkins:
+    image: custom-jenkins:latest
+    restart: unless-stopped
+
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+
+    volumes:
+      - ./jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./jenkins_sonar_cache:/var/jenkins_home/.sonar
+
+    # tmpfs for temp files — scanner writes lots of temp data, RAM is faster than disk
+    tmpfs:
+      - /tmp
+
+    user: root
+    entrypoint: >
+      bash -c "
+      chmod 666 /var/run/docker.sock &&
+      /usr/bin/tini -- /usr/local/bin/jenkins.sh
+      "
+    
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx2g
+      - NODE_OPTIONS=--max-old-space-size=4096
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      # Ensure scanner writes cache to the persisted volume
+      - SONAR_USER_HOME=/var/jenkins_home/.sonar
+      - HOST_JENKINS_HOME=/Users/sithumraigamage/Development/jenkins/jenkins_home
+
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+          cpus: "2"
+        reservations:
+          memory: 2G
+
+    networks:
+      - devops-network
+
+networks:
+  devops-network:
+    name: devops-network
+    driver: bridge

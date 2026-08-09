@@ -1,0 +1,1038 @@
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout(true)
+        timestamps()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '30'))
+    }
+
+    // Standardized environment and credential placeholders
+    environment {
+        // SonarScanner tool name (configure in Jenkins Global Tool Configuration)
+        SONAR_SCANNER_TOOL_NAME = '{{SONAR_SCANNER_TOOL_NAME}}'
+
+        // SonarQube Server and credentials (token injected only during scan stage)
+        SONAR_SERVER_URL = '{{SONAR_SERVER_URL}}'
+        SONAR_AUTH_TOKEN_ID = '{{SONAR_AUTH_TOKEN_ID}}'
+        SONAR_PROJECT_KEY = '{{SONAR_PROJECT_KEY}}'
+        SONAR_PROJECT_NAME = '{{SONAR_PROJECT_NAME}}'
+
+        // Trivy report filename(s) (will be archived / published if generated)
+        TRIVY_REPORT_NAME = 'trivy-report.html'
+        TRIVY_TEXT_REPORT_NAME = 'trivy-report.txt'
+
+        // Repo scanning / lint report filenames
+        GITLEAKS_REPORT_NAME = 'gitleaks-report.sarif'
+        HADOLINT_REPORT_NAME = 'hadolint-report.txt'
+        SEMGREP_REPORT_NAME = 'semgrep-report.sarif'
+        TRIVY_FS_REPORT_NAME = 'trivy-fs-report.txt'
+        SBOM_REPORT_NAME = 'sbom.cdx.json'
+
+        // Email settings (use credentials or replace with organization values)
+        SENDER_EMAIL = '{{SENDER_EMAIL}}'
+        RECEIVER_EMAIL = '{{RECEIVER_EMAIL}}'
+
+        // GitHub / repository credentials id (SSH key credential configured in Jenkins)
+        GITHUB_CREDENTIALS = '{{GITHUB_CREDENTIALS}}'
+
+        // Docker registry settings (optional; only used when pushing/signing images)
+        DOCKER_REGISTRY = '{{DOCKER_REGISTRY}}'
+        DOCKER_REGISTRY_CREDENTIALS_ID = '{{DOCKER_REGISTRY_CREDENTIALS_ID}}'
+
+        // Optional tuning for Sonar Scanner
+        SONAR_SCANNER_OPTS = '-Xmx2048m -Xms512m'
+    }
+
+
+    parameters {
+        string(name: 'RELEASE_VERSION', defaultValue: '', description: 'Release version (SemVer). If empty, a CI pre-release version will be auto-generated.')
+        string(name: 'GIT_REPO_URL', defaultValue: '{{GIT_REPO_URL}}', description: 'Git Repository URL')
+        string(name: 'BRANCH', defaultValue: 'main', description: 'Branch to build')
+        choice(name: 'ENVIRONMENT', choices: ['dev', 'qa', 'staging', 'prod'], description: 'Target Environment')
+
+        // Notifications / optional checks
+        booleanParam(name: 'SEND_EMAIL', defaultValue: true, description: 'Send email notifications?')
+        booleanParam(name: 'SECRETS_SCAN', defaultValue: true, description: 'Scan repo for hardcoded secrets (gitleaks)')
+        booleanParam(name: 'SAST_SCAN', defaultValue: true, description: 'Run SAST scan (semgrep)')
+        booleanParam(name: 'REPO_VULN_SCAN', defaultValue: true, description: 'Scan repo/dependencies for known vulnerabilities (trivy fs)')
+        booleanParam(name: 'GENERATE_SBOM', defaultValue: true, description: 'Generate SBOM (syft CycloneDX)')
+
+        // Docker pipeline
+        booleanParam(name: 'DOCKER_PIPELINE', defaultValue: true, description: 'Run Dockerfile lint/build/image scan stages (requires Dockerfile)')
+        booleanParam(name: 'REQUIRE_PROD_APPROVAL', defaultValue: true, description: 'Require manual approval when ENVIRONMENT=prod')
+        booleanParam(name: 'PUSH_IMAGE', defaultValue: false, description: 'Push Docker image to registry (requires DOCKER_REGISTRY + credentials)')
+        booleanParam(name: 'SIGN_IMAGE', defaultValue: false, description: 'Sign pushed image with cosign (keyless or key-based, depending on your setup)')
+
+        // Sonar (kept optional; current config is Node/src oriented)
+        booleanParam(name: 'SONARQUBE_SCAN', defaultValue: true, description: 'Perform SonarQube scan?')
+
+        // Build/Test toggles
+        booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run tests when supported by detected stack (skips with warning if unavailable)')
+
+        // Trivy gating
+        choice(name: 'TRIVY_FAIL_SEVERITIES', choices: ['CRITICAL', 'HIGH,CRITICAL', 'MEDIUM,HIGH,CRITICAL'], description: 'Fail build if Trivy finds vulnerabilities at these severities')
+    }
+
+    stages {
+        
+        // Stage to checkout source code from the provided Git repository and branch
+        stage('Checkout') {
+            steps {
+                script {
+                    // Explicit checkout using provided repository and credentials
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: "*/${params.BRANCH}"]],
+                        userRemoteConfigs: [[
+                            url: "${params.GIT_REPO_URL}",
+                            credentialsId: "${GITHUB_CREDENTIALS}"
+                        ]]
+                    ])
+                }
+            }
+        }
+
+        stage('Detect Project') {
+            steps {
+                script {
+                    env.HAS_PACKAGE_JSON = fileExists('package.json') ? 'true' : 'false'
+                    env.HAS_DOCKERFILE = fileExists('Dockerfile') ? 'true' : 'false'
+                    env.HAS_POM_XML = fileExists('pom.xml') ? 'true' : 'false'
+                    env.HAS_MVN_WRAPPER = fileExists('mvnw') ? 'true' : 'false'
+                    env.HAS_GRADLE = (fileExists('build.gradle') || fileExists('build.gradle.kts')) ? 'true' : 'false'
+                    env.HAS_GRADLE_WRAPPER = fileExists('gradlew') ? 'true' : 'false'
+                    env.HAS_PYTHON = (fileExists('pyproject.toml') || fileExists('requirements.txt')) ? 'true' : 'false'
+                    env.HAS_GO = fileExists('go.mod') ? 'true' : 'false'
+                    env.HAS_DOTNET = (sh(script: "ls -1 *.sln *.csproj 2>/dev/null | head -n 1", returnStatus: true) == 0) ? 'true' : 'false'
+
+                    echo "Detected: node=${env.HAS_PACKAGE_JSON}, maven=${env.HAS_POM_XML} (mvnw=${env.HAS_MVN_WRAPPER}), gradle=${env.HAS_GRADLE} (gradlew=${env.HAS_GRADLE_WRAPPER}), python=${env.HAS_PYTHON}, go=${env.HAS_GO}, dotnet=${env.HAS_DOTNET}, dockerfile=${env.HAS_DOCKERFILE}"
+                }
+            }
+        }
+
+        stage('Secrets Scan (Gitleaks)') {
+            when {
+                expression { params.SECRETS_SCAN }
+            }
+            steps {
+                script {
+                    // Fail fast if hardcoded secrets/keys are found
+                    sh """
+                        set -e
+                        command -v docker >/dev/null
+
+                        docker run --rm \
+                          -v \"${env.WORKSPACE}:/repo\" -w /repo \
+                          zricethezav/gitleaks:v8.21.2 \
+                          detect --source . --no-git --redact \
+                          --report-format sarif --report-path \"${GITLEAKS_REPORT_NAME}\"
+                    """
+                }
+            }
+        }
+
+        stage('SAST (Semgrep)') {
+            when {
+                expression { params.SAST_SCAN }
+            }
+            steps {
+                script {
+                    // Mark UNSTABLE on findings/tool issues, but keep build moving (adjust to fail-fast if desired)
+                    catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                        sh """
+                            set -e
+                            command -v docker >/dev/null
+
+                            docker run --rm \
+                              -v \"${env.WORKSPACE}:/src\" -w /src \
+                              returntocorp/semgrep:1.89.0 \
+                              semgrep scan --config=auto --sarif --output \"${SEMGREP_REPORT_NAME}\"
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Trivy Repo Scan') {
+            when {
+                expression { params.REPO_VULN_SCAN }
+            }
+            steps {
+                script {
+                    sh """
+                        set -e
+                        command -v docker >/dev/null
+
+                        docker run --rm \
+                          -v \"${env.WORKSPACE}:/repo\" -w /repo \
+                          aquasec/trivy:0.57.0 \
+                          fs --timeout 10m \
+                          --scanners vuln,config,license \
+                          --severity \"${TRIVY_FAIL_SEVERITIES}\" \
+                          --exit-code 1 \
+                          --format table -o \"${TRIVY_FS_REPORT_NAME}\" \
+                          .
+                    """
+                }
+            }
+        }
+
+        stage('Generate SBOM (Syft)') {
+            when {
+                expression { params.GENERATE_SBOM }
+            }
+            steps {
+                script {
+                    sh """
+                        set -e
+                        command -v docker >/dev/null
+
+                        docker run --rm \
+                          -v \"${env.WORKSPACE}:/repo\" -w /repo \
+                          anchore/syft:v1.4.1 \
+                          dir:/repo -o cyclonedx-json=/repo/\"${SBOM_REPORT_NAME}\"
+                    """
+                }
+            }
+        }
+
+        // Stage to verify the provided version (if any) and compute the effective version used for tagging
+        stage('Determine Version') {
+            steps {
+                script {
+                    def inputVersion = (params.RELEASE_VERSION ?: '').trim()
+
+                    // SemVer: X.Y.Z with optional pre-release/build metadata
+                    def semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+
+                    if (inputVersion) {
+                        if (inputVersion ==~ semverPattern) {
+                            echo "Release version ${inputVersion} is valid."
+                            env.EFFECTIVE_VERSION = inputVersion
+                        } else {
+                            error "RELEASE_VERSION '${inputVersion}' is not valid SemVer."
+                        }
+                    } else {
+                        env.EFFECTIVE_VERSION = "0.0.0-${env.BUILD_NUMBER}"
+                        echo "RELEASE_VERSION not provided; using CI version ${env.EFFECTIVE_VERSION}"
+                    }
+                }
+            }
+        }
+        
+        // Stage to install Node.js dependencies (prefer reproducible installs)
+        stage('Install') {
+            when {
+                expression { env.HAS_PACKAGE_JSON == 'true' }
+            }
+            tools {
+                nodejs '{{NODEJS_TOOL_NAME}}'
+            }
+            steps {
+                sh 'if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi'
+            }
+        }
+
+        stage('Lint') {
+            when {
+                expression { env.HAS_PACKAGE_JSON == 'true' }
+            }
+            tools {
+                nodejs '{{NODEJS_TOOL_NAME}}'
+            }
+            steps {
+                script {
+                    // Only run if package.json defines a lint script
+                    sh """
+                        set -e
+                        if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.lint ? 0 : 1)"; then
+                          npm run -s lint
+                        else
+                          echo 'SKIPPING: no npm lint script'
+                        fi
+                    """
+                }
+            }
+        }
+
+        stage('Build') {
+            when {
+                expression { env.HAS_PACKAGE_JSON == 'true' }
+            }
+            tools {
+                nodejs '{{NODEJS_TOOL_NAME}}'
+            }
+            steps {
+                script {
+                    // Only run if package.json defines a build script
+                    sh """
+                        set -e
+                        if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.build ? 0 : 1)"; then
+                          npm run -s build
+                        else
+                          echo 'SKIPPING: no npm build script'
+                        fi
+                    """
+                }
+            }
+        }
+
+        // Stage to execute unit tests to ensure code quality before building
+        stage('Test') {
+            when {
+                allOf {
+                    expression { params.RUN_TESTS }
+                    expression { env.HAS_PACKAGE_JSON == 'true' }
+                }
+            }
+            tools {
+                nodejs '{{NODEJS_TOOL_NAME}}'
+            }
+            steps {
+                script {
+                    def hasTestScript = sh(
+                        script: "node -e \"const p=require('./package.json'); process.exit(p.scripts && p.scripts.test ? 0 : 1)\"",
+                        returnStatus: true
+                    ) == 0
+
+                    if (!hasTestScript) {
+                        echo """
+╔═══════════════════════════════════════════════════════════════╗
+║                    ⚠️  WARNING: NO TEST SCRIPT                 ║
+╠═══════════════════════════════════════════════════════════════╣
+║  No 'test' script found in package.json.                      ║
+║  Skipping test execution.                                     ║
+╚═══════════════════════════════════════════════════════════════╝
+                        """
+                        currentBuild.result = 'UNSTABLE'
+                    } else {
+                        sh 'npm test'
+                    }
+                }
+            }
+        }
+
+        stage('Test (Maven)') {
+            when {
+                allOf {
+                    expression { params.RUN_TESTS }
+                    expression { env.HAS_POM_XML == 'true' }
+                }
+            }
+            steps {
+                script {
+                    def cmd = null
+                    if (env.HAS_MVN_WRAPPER == 'true') {
+                        cmd = './mvnw -q test'
+                    } else if (sh(script: 'command -v mvn >/dev/null', returnStatus: true) == 0) {
+                        cmd = 'mvn -q test'
+                    }
+
+                    if (!cmd) {
+                        echo """
+╔═══════════════════════════════════════════════════════════════╗
+║                 ⚠️  WARNING: MAVEN NOT AVAILABLE               ║
+╠═══════════════════════════════════════════════════════════════╣
+║  pom.xml detected but neither ./mvnw nor mvn is available.     ║
+║  Skipping Maven tests.                                        ║
+╚═══════════════════════════════════════════════════════════════╝
+                        """
+                        currentBuild.result = 'UNSTABLE'
+                        return
+                    }
+
+                    def logFile = 'maven-test.log'
+                    def status = sh(script: "bash -lc 'set -o pipefail; ${cmd} | tee ${logFile}'", returnStatus: true)
+                    if (status != 0) {
+                        error "Maven tests failed (exit ${status})"
+                    }
+
+                    if (sh(script: "grep -Eiq 'No tests to run' ${logFile}", returnStatus: true) == 0) {
+                        echo """
+╔═══════════════════════════════════════════════════════════════╗
+║                 ⚠️  WARNING: NO MAVEN TESTS RUN                ║
+╠═══════════════════════════════════════════════════════════════╣
+║  Maven reported 'No tests to run'.                             ║
+║  Skipping test verification for this stack.                    ║
+╚═══════════════════════════════════════════════════════════════╝
+                        """
+                        currentBuild.result = 'UNSTABLE'
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'maven-test.log', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Test (Gradle)') {
+            when {
+                allOf {
+                    expression { params.RUN_TESTS }
+                    expression { env.HAS_GRADLE == 'true' }
+                }
+            }
+            steps {
+                script {
+                    def cmd = null
+                    if (env.HAS_GRADLE_WRAPPER == 'true') {
+                        cmd = './gradlew test --no-daemon'
+                    } else if (sh(script: 'command -v gradle >/dev/null', returnStatus: true) == 0) {
+                        cmd = 'gradle test --no-daemon'
+                    }
+
+                    if (!cmd) {
+                        echo """
+╔═══════════════════════════════════════════════════════════════╗
+║                ⚠️  WARNING: GRADLE NOT AVAILABLE               ║
+╠═══════════════════════════════════════════════════════════════╣
+║  Gradle build detected but neither ./gradlew nor gradle exists.║
+║  Skipping Gradle tests.                                       ║
+╚═══════════════════════════════════════════════════════════════╝
+                        """
+                        currentBuild.result = 'UNSTABLE'
+                        return
+                    }
+
+                    def logFile = 'gradle-test.log'
+                    def status = sh(script: "bash -lc 'set -o pipefail; ${cmd} | tee ${logFile}'", returnStatus: true)
+                    if (status != 0) {
+                        error "Gradle tests failed (exit ${status})"
+                    }
+
+                    if (sh(script: "grep -Eiq 'NO-SOURCE|0 tests completed|No tests found' ${logFile}", returnStatus: true) == 0) {
+                        echo """
+╔═══════════════════════════════════════════════════════════════╗
+║                ⚠️  WARNING: NO GRADLE TESTS RUN                ║
+╠═══════════════════════════════════════════════════════════════╣
+║  Gradle reported no tests executed.                            ║
+║  Skipping test verification for this stack.                    ║
+╚═══════════════════════════════════════════════════════════════╝
+                        """
+                        currentBuild.result = 'UNSTABLE'
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'gradle-test.log', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Test (Python)') {
+            when {
+                allOf {
+                    expression { params.RUN_TESTS }
+                    expression { env.HAS_PYTHON == 'true' }
+                }
+            }
+            steps {
+                script {
+                    // Heuristic: if there's no tests/ directory and no pytest config, treat tests as unavailable
+                    def hasTests = (fileExists('tests') || fileExists('pytest.ini') || fileExists('tox.ini') || fileExists('setup.cfg'))
+                    if (!hasTests) {
+                        echo """
+╔═══════════════════════════════════════════════════════════════╗
+║               ⚠️  WARNING: PYTHON TESTS NOT FOUND              ║
+╠═══════════════════════════════════════════════════════════════╣
+║  Python project detected but no obvious test entrypoint found. ║
+║  Skipping Python tests.                                       ║
+╚═══════════════════════════════════════════════════════════════╝
+                        """
+                        currentBuild.result = 'UNSTABLE'
+                        return
+                    }
+
+                    // Run pytest in a container for portability
+                    if (sh(script: 'command -v docker >/dev/null', returnStatus: true) != 0) {
+                        echo """
+╔═══════════════════════════════════════════════════════════════╗
+║              ⚠️  WARNING: DOCKER NOT AVAILABLE                 ║
+╠═══════════════════════════════════════════════════════════════╣
+║  Docker is required to run Python tests in this template.      ║
+║  Skipping Python tests.                                       ║
+╚═══════════════════════════════════════════════════════════════╝
+                        """
+                        currentBuild.result = 'UNSTABLE'
+                        return
+                    }
+
+                    def logFile = 'python-test.log'
+                    def status = sh(script: """
+                        bash -lc 'set -euo pipefail
+                        docker run --rm -v "${env.WORKSPACE}:/repo" -w /repo python:3.12-slim bash -lc '"'"'
+                          python -m pip install -q --upgrade pip &&
+                          if [ -f requirements.txt ]; then pip install -q -r requirements.txt; fi &&
+                          pip install -q pytest &&
+                          pytest -q
+                        '"'"' | tee ${logFile}
+                        '
+                    """, returnStatus: true)
+
+                    if (status != 0) {
+                        error "Python tests failed (exit ${status})"
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'python-test.log', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Test (Go)') {
+            when {
+                allOf {
+                    expression { params.RUN_TESTS }
+                    expression { env.HAS_GO == 'true' }
+                }
+            }
+            steps {
+                script {
+                    if (sh(script: 'command -v docker >/dev/null', returnStatus: true) != 0) {
+                        echo """
+╔═══════════════════════════════════════════════════════════════╗
+║              ⚠️  WARNING: DOCKER NOT AVAILABLE                 ║
+╠═══════════════════════════════════════════════════════════════╣
+║  Docker is required to run Go tests in this template.          ║
+║  Skipping Go tests.                                           ║
+╚═══════════════════════════════════════════════════════════════╝
+                        """
+                        currentBuild.result = 'UNSTABLE'
+                        return
+                    }
+
+                    def logFile = 'go-test.log'
+                    def status = sh(script: """
+                        bash -lc 'set -euo pipefail
+                        docker run --rm -v "${env.WORKSPACE}:/repo" -w /repo golang:1.22 bash -lc '"'"'
+                          go test ./...
+                        '"'"' | tee ${logFile}
+                        '
+                    """, returnStatus: true)
+
+                    if (status != 0) {
+                        error "Go tests failed (exit ${status})"
+                    }
+
+                    if (sh(script: "grep -Eiq 'no test files' ${logFile}", returnStatus: true) == 0) {
+                        echo """
+╔═══════════════════════════════════════════════════════════════╗
+║                 ⚠️  WARNING: NO GO TESTS FOUND                ║
+╠═══════════════════════════════════════════════════════════════╣
+║  Go reported packages with 'no test files'.                    ║
+║  Ensure *_test.go exists to validate behavior.                 ║
+╚═══════════════════════════════════════════════════════════════╝
+                        """
+                        currentBuild.result = 'UNSTABLE'
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'go-test.log', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Test (.NET)') {
+            when {
+                allOf {
+                    expression { params.RUN_TESTS }
+                    expression { env.HAS_DOTNET == 'true' }
+                }
+            }
+            steps {
+                script {
+                    if (sh(script: 'command -v docker >/dev/null', returnStatus: true) != 0) {
+                        echo """
+╔═══════════════════════════════════════════════════════════════╗
+║              ⚠️  WARNING: DOCKER NOT AVAILABLE                 ║
+╠═══════════════════════════════════════════════════════════════╣
+║  Docker is required to run .NET tests in this template.        ║
+║  Skipping .NET tests.                                         ║
+╚═══════════════════════════════════════════════════════════════╝
+                        """
+                        currentBuild.result = 'UNSTABLE'
+                        return
+                    }
+
+                    def logFile = 'dotnet-test.log'
+                    def status = sh(script: """
+                        bash -lc 'set -euo pipefail
+                        docker run --rm -v "${env.WORKSPACE}:/repo" -w /repo mcr.microsoft.com/dotnet/sdk:8.0 bash -lc '"'"'
+                          dotnet test --nologo
+                        '"'"' | tee ${logFile}
+                        '
+                    """, returnStatus: true)
+
+                    if (status != 0) {
+                        error ".NET tests failed (exit ${status})"
+                    }
+
+                    if (sh(script: "grep -Eiq 'No test is available|No tests available|0 total' ${logFile}", returnStatus: true) == 0) {
+                        echo """
+╔═══════════════════════════════════════════════════════════════╗
+║               ⚠️  WARNING: NO .NET TESTS EXECUTED              ║
+╠═══════════════════════════════════════════════════════════════╣
+║  dotnet test reported no tests executed.                       ║
+║  Add a test project (xUnit/NUnit/MSTest) to enable tests.      ║
+╚═══════════════════════════════════════════════════════════════╝
+                        """
+                        currentBuild.result = 'UNSTABLE'
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'dotnet-test.log', allowEmptyArchive: true
+                }
+            }
+        }
+
+        // Stage to perform static code analysis using SonarQube
+        stage('SonarQube Analysis') {
+            when {
+                allOf {
+                    expression { params.SONARQUBE_SCAN }
+                    expression { env.HAS_PACKAGE_JSON == 'true' }
+                }
+            }
+            tools {
+                nodejs '{{NODEJS_TOOL_NAME}}'
+            }
+            steps {
+                script {
+                    // Print cache for diagnostics (agent-safe path)
+                    sh 'echo "Scanner cache contents:" && ls -la "$HOME/.sonar/cache" 2>/dev/null || echo "Cache is empty — first run will be slower"'
+
+                    def scanStart = System.currentTimeMillis()
+                    def scannerHome = tool(env.SONAR_SCANNER_TOOL_NAME)
+
+                    // 'SonarServer' is the SonarQube server configured in Jenkins
+                    withCredentials([string(credentialsId: env.SONAR_AUTH_TOKEN_ID, variable: 'SONAR_AUTH_TOKEN')]) {
+                        withSonarQubeEnv('{{SONAR_SERVER_NAME}}') {
+                            sh """
+                                \"${scannerHome}/bin/sonar-scanner\" \
+                                -Dproject.settings=/dev/null \
+                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                                -Dsonar.projectName=\"${SONAR_PROJECT_NAME}\" \
+                                -Dsonar.host.url=${SONAR_SERVER_URL} \
+                                -Dsonar.login=$SONAR_AUTH_TOKEN \
+                                -Dsonar.sources=src \
+                                -Dsonar.exclusions=node_modules/**,dist/**,**/*.spec.ts \
+                                -Dsonar.javascript.node.maxspace=768
+                            """
+                        }
+                    }
+
+                    def scanDuration = (System.currentTimeMillis() - scanStart) / 1000
+                    echo "SonarQube scan completed in ${scanDuration} seconds"
+                    echo "View results: ${SONAR_SERVER_URL}/dashboard?id=${SONAR_PROJECT_KEY}"
+                }
+            }
+        }
+
+        stage('SonarQube Quality Gate') {
+            when {
+                allOf {
+                    expression { params.SONARQUBE_SCAN }
+                    expression { env.HAS_PACKAGE_JSON == 'true' }
+                }
+            }
+            steps {
+                timeout(time: 10, unit: 'MINUTES') {
+                    script {
+                        try {
+                            def qg = waitForQualityGate()
+                            if (qg.status != 'OK') {
+                                error "Pipeline aborted due to SonarQube quality gate: ${qg.status}"
+                            }
+                        } catch (NoSuchMethodError e) {
+                            echo 'SKIPPING: waitForQualityGate step not available. Install/configure the SonarQube Jenkins plugin to enforce quality gates.'
+                        }
+                    }
+                }
+            }
+        }
+
+        // Stage to logicially determine the Docker image name based on the target environment
+        stage('Determine Image Name') {
+            when {
+                allOf {
+                    expression { params.DOCKER_PIPELINE }
+                    expression { env.HAS_DOCKERFILE == 'true' }
+                }
+            }
+            steps {
+                script {
+                    def imageName = "{{DOCKER_IMAGE_NAME}}"
+                    // Prefix non-production builds with the environment name
+                    if (params.ENVIRONMENT != 'prod') {
+                        imageName = "${params.ENVIRONMENT}-${imageName}"
+                    }
+
+                    env.FINAL_IMAGE_NAME = imageName
+                    env.LOCAL_IMAGE_REF = "${env.FINAL_IMAGE_NAME}:${env.EFFECTIVE_VERSION}"
+
+                    def registry = (env.DOCKER_REGISTRY ?: '').trim()
+                    if (registry) {
+                        env.REMOTE_IMAGE_REF = "${registry}/${env.FINAL_IMAGE_NAME}:${env.EFFECTIVE_VERSION}"
+                    } else {
+                        env.REMOTE_IMAGE_REF = ''
+                    }
+
+                    echo "Local image: ${env.LOCAL_IMAGE_REF}"
+                    if (env.REMOTE_IMAGE_REF) {
+                        echo "Remote image: ${env.REMOTE_IMAGE_REF}"
+                    }
+                }
+            }
+        }
+
+        stage('Validate Dockerfile (Hadolint)') {
+            when {
+                allOf {
+                    expression { params.DOCKER_PIPELINE }
+                    expression { env.HAS_DOCKERFILE == 'true' }
+                }
+            }
+            steps {
+                script {
+                    sh """
+                        set -e
+                        command -v docker >/dev/null
+
+                        docker run --rm -i hadolint/hadolint:v2.12.0 < Dockerfile | tee \"${HADOLINT_REPORT_NAME}\"
+                    """
+                }
+            }
+        }
+
+        stage('Dockerfile Policy Checks') {
+            when {
+                allOf {
+                    expression { params.DOCKER_PIPELINE }
+                    expression { env.HAS_DOCKERFILE == 'true' }
+                }
+            }
+            steps {
+                script {
+                    def nonProdGate = {
+                        catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                            sh """
+                                set -e
+                                if grep -Eiq '^\s*FROM\s+[^#]+:latest(\s|$)' Dockerfile; then
+                                  echo 'ERROR: Dockerfile uses :latest tag. Pin to a version or digest.'
+                                  exit 1
+                                fi
+                                if ! grep -Eiq '^\s*USER\s+' Dockerfile; then
+                                  echo 'ERROR: Dockerfile does not set USER. Prefer non-root runtime.'
+                                  exit 1
+                                fi
+                            """
+                        }
+                    }
+
+                    if (params.ENVIRONMENT == 'prod') {
+                        // In prod, enforce these as hard failures
+                        sh """
+                            set -e
+                            if grep -Eiq '^\s*FROM\s+[^#]+:latest(\s|$)' Dockerfile; then
+                              echo 'ERROR: Dockerfile uses :latest tag. Pin to a version or digest.'
+                              exit 1
+                            fi
+                            if ! grep -Eiq '^\s*USER\s+' Dockerfile; then
+                              echo 'ERROR: Dockerfile does not set USER. Prefer non-root runtime.'
+                              exit 1
+                            fi
+                        """
+                    } else {
+                        nonProdGate()
+                    }
+                }
+            }
+        }
+
+        stage('Prod Approval') {
+            when {
+                allOf {
+                    expression { params.DOCKER_PIPELINE }
+                    expression { env.HAS_DOCKERFILE == 'true' }
+                    expression { params.REQUIRE_PROD_APPROVAL }
+                    expression { params.ENVIRONMENT == 'prod' }
+                }
+            }
+            steps {
+                input message: 'Approve running the Docker build pipeline for PROD?', ok: 'Proceed'
+            }
+        }
+
+        // Stage to build the Docker image with the determined name and version tag
+        stage('Build Image') {
+            when {
+                allOf {
+                    expression { params.DOCKER_PIPELINE }
+                    expression { env.HAS_DOCKERFILE == 'true' }
+                }
+            }
+            steps {
+                script {
+                    sh """
+                        set -e
+                        command -v docker >/dev/null
+                        docker build -t \"${env.LOCAL_IMAGE_REF}\" .
+                    """
+                }
+            }
+        }
+
+        // Stage to scan the built Docker image for vulnerabilities using Trivy
+        stage('Trivy Security Scan') {
+            when {
+                allOf {
+                    expression { params.DOCKER_PIPELINE }
+                    expression { env.HAS_DOCKERFILE == 'true' }
+                }
+            }
+            steps {
+                script {
+                    def imageRef = env.LOCAL_IMAGE_REF
+
+                    // Keep pipeline green but make the stage UNSTABLE on scan/report failures
+                    catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                        sh """
+                            set -e
+                            command -v docker >/dev/null
+
+                            if [ ! -f html.tpl ]; then
+                                # Prefer pinned template (avoid pulling 'latest' at runtime)
+                                if ! curl -fsSL https://raw.githubusercontent.com/aquasecurity/trivy/v0.57.0/contrib/html.tpl -o html.tpl; then
+                                    echo "WARNING: Failed to download Trivy HTML template; falling back to text report"
+                                    trivy image --timeout 10m --format table -o \"${TRIVY_TEXT_REPORT_NAME}\" \"${imageRef}\"
+                                    exit 0
+                                fi
+                            fi
+
+                            trivy image --timeout 10m --format template --template @html.tpl -o \"${TRIVY_REPORT_NAME}\" \"${imageRef}\"
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Push Image') {
+            when {
+                allOf {
+                    expression { params.DOCKER_PIPELINE }
+                    expression { env.HAS_DOCKERFILE == 'true' }
+                    expression { params.PUSH_IMAGE }
+                }
+            }
+            steps {
+                script {
+                    if (!env.REMOTE_IMAGE_REF?.trim()) {
+                        error 'DOCKER_REGISTRY is required to push images (set DOCKER_REGISTRY in environment)'
+                    }
+
+                    withCredentials([usernamePassword(credentialsId: env.DOCKER_REGISTRY_CREDENTIALS_ID, usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
+                        sh """
+                            set -e
+                            command -v docker >/dev/null
+
+                            echo \"$REG_PASS\" | docker login \"${DOCKER_REGISTRY}\" -u \"$REG_USER\" --password-stdin
+                            docker tag \"${LOCAL_IMAGE_REF}\" \"${REMOTE_IMAGE_REF}\"
+                            docker push \"${REMOTE_IMAGE_REF}\"
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Sign Image (Cosign)') {
+            when {
+                allOf {
+                    expression { params.DOCKER_PIPELINE }
+                    expression { env.HAS_DOCKERFILE == 'true' }
+                    expression { params.SIGN_IMAGE }
+                    expression { params.PUSH_IMAGE }
+                }
+            }
+            steps {
+                script {
+                    if (!env.REMOTE_IMAGE_REF?.trim()) {
+                        error 'REMOTE_IMAGE_REF not set (requires DOCKER_REGISTRY)'
+                    }
+
+                    // Keyless signing generally requires CI OIDC wiring. Keep this as a template hook.
+                    catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                        sh """
+                            set -e
+                            command -v docker >/dev/null
+
+                            docker run --rm \
+                              -v \"$HOME/.docker:/root/.docker\" \
+                              ghcr.io/sigstore/cosign/cosign:v2.4.1 \
+                              sign --yes \"${REMOTE_IMAGE_REF}\"
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    // Post-build conditions to handle reporting, status notifications, and emails
+    post {
+        always {
+            script {
+                // Archive/publish report if present
+                if (fileExists(env.TRIVY_REPORT_NAME)) {
+                    archiveArtifacts artifacts: "${env.TRIVY_REPORT_NAME}", allowEmptyArchive: true
+
+                    publishHTML (target: [
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: "${env.TRIVY_REPORT_NAME}",
+                        reportName: 'Trivy Security Report'
+                    ])
+                } else if (fileExists(env.TRIVY_TEXT_REPORT_NAME)) {
+                    archiveArtifacts artifacts: "${env.TRIVY_TEXT_REPORT_NAME}", allowEmptyArchive: true
+                    echo "Published text-only Trivy report: ${env.TRIVY_TEXT_REPORT_NAME}"
+                } else {
+                    echo "SKIPPING: Trivy report not found"
+                }
+
+                if (fileExists(env.GITLEAKS_REPORT_NAME)) {
+                    archiveArtifacts artifacts: "${env.GITLEAKS_REPORT_NAME}", allowEmptyArchive: true
+                } else {
+                    echo "SKIPPING: ${env.GITLEAKS_REPORT_NAME} not found"
+                }
+
+                if (fileExists(env.HADOLINT_REPORT_NAME)) {
+                    archiveArtifacts artifacts: "${env.HADOLINT_REPORT_NAME}", allowEmptyArchive: true
+                } else {
+                    echo "SKIPPING: ${env.HADOLINT_REPORT_NAME} not found"
+                }
+
+                if (fileExists(env.SEMGREP_REPORT_NAME)) {
+                    archiveArtifacts artifacts: "${env.SEMGREP_REPORT_NAME}", allowEmptyArchive: true
+                } else {
+                    echo "SKIPPING: ${env.SEMGREP_REPORT_NAME} not found"
+                }
+
+                if (fileExists(env.TRIVY_FS_REPORT_NAME)) {
+                    archiveArtifacts artifacts: "${env.TRIVY_FS_REPORT_NAME}", allowEmptyArchive: true
+                } else {
+                    echo "SKIPPING: ${env.TRIVY_FS_REPORT_NAME} not found"
+                }
+
+                if (fileExists(env.SBOM_REPORT_NAME)) {
+                    archiveArtifacts artifacts: "${env.SBOM_REPORT_NAME}", allowEmptyArchive: true
+                } else {
+                    echo "SKIPPING: ${env.SBOM_REPORT_NAME} not found"
+                }
+            }
+        }
+        success {
+            script {
+                if (params.SEND_EMAIL) {
+                    try {
+                        emailext (
+                            from: "${env.SENDER_EMAIL}",
+                            to: "${env.RECEIVER_EMAIL}",
+                            subject: "BUILD SUCCESS: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
+                            body: generateEmailBody('SUCCESS', '#28a745'),
+                            mimeType: 'text/html'
+                        )
+                    } catch (Exception e) {
+                        echo "ERROR: Failed to send success email: ${e.message}"
+                    }
+                }
+            }
+            echo 'Pipeline completed successfully. Email notification sent.'
+        }
+        failure {
+            script {
+                if (params.SEND_EMAIL) {
+                    try {
+                        emailext (
+                            from: "${env.SENDER_EMAIL}",
+                            to: "${env.RECEIVER_EMAIL}",
+                            subject: "BUILD FAILED: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
+                            body: generateEmailBody('FAILURE', '#dc3545'),
+                            mimeType: 'text/html'
+                        )
+                    } catch (Exception e) {
+                        echo "ERROR: Failed to send failure email: ${e.message}"
+                    }
+                }
+            }
+            echo 'Pipeline failed. Email notification sent.'
+        }
+    }
+}
+
+// Helper function to generate an HTML email body
+def generateEmailBody(status, color) {
+    return """
+    <html>
+    <head>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4; padding: 20px; }
+            .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background-color: ${color}; color: #ffffff; padding: 20px; text-align: center; }
+            .header h1 { margin: 0; font-size: 24px; }
+            .content { padding: 30px; }
+            .info-item { margin-bottom: 15px; border-bottom: 1px solid #eeeeee; padding-bottom: 10px; }
+            .info-item:last-child { border-bottom: none; }
+            .label { font-weight: bold; color: #555555; display: inline-block; width: 120px; }
+            .value { color: #333333; }
+            .footer { background-color: #eeeeee; padding: 15px; text-align: center; font-size: 12px; color: #777777; }
+            .button { display: inline-block; padding: 10px 20px; background-color: ${color}; color: #ffffff; text-decoration: none; border-radius: 4px; margin-top: 20px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Build ${status}</h1>
+            </div>
+            <div class="content">
+                <div class="info-item">
+                    <span class="label">Project:</span>
+                    <span class="value">${env.JOB_NAME}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Build Number:</span>
+                    <span class="value">#${env.BUILD_NUMBER}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Branch:</span>
+                    <span class="value">${params.BRANCH}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Environment:</span>
+                    <span class="value">${params.ENVIRONMENT}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Version:</span>
+                    <span class="value">${env.EFFECTIVE_VERSION}</span>
+                </div>
+                <div style="text-align: center;">
+                    <a href="${env.BUILD_URL}" class="button">View Build Logs</a>
+                </div>
+            </div>
+            <div class="footer">
+                <p>Generated by Jenkins CI</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+}

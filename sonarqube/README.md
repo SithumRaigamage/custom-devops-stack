@@ -95,11 +95,13 @@ http://localhost:9000
 
 ### Change Default Passwords
 1. **SonarQube Admin**: Change on first login
-2. **PostgreSQL Password**: Update in `docker-compose.yml`:
-   ```yaml
-   POSTGRES_PASSWORD: your_secure_password_here
-   SONAR_JDBC_PASSWORD: your_secure_password_here
+2. **PostgreSQL Password**: Not hardcoded in `docker-compose.yml` anymore — it's read from `sonarqube/.env` (gitignored) as `SONARQUBE_DB_PASSWORD`. Copy `.env.example` to `.env` and set a real value before first start.
+
+   ⚠️ If `./postgresql` already has an initialized database, changing `.env` alone will **not** change the DB user's actual password (Postgres only applies it on first init of an empty data directory). To rotate the password on an existing database, run:
+   ```bash
+   docker exec -it sonarqube-db psql -U sonar -d sonar -c "ALTER USER sonar WITH PASSWORD 'new-password-here';"
    ```
+   and then update `.env` to match.
 
 ### Generate Authentication Token
 For Jenkins integration:

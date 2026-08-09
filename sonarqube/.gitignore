@@ -42,5 +42,6 @@ postgresql/
 # Other
 .env
 .env.*
+!.env.example
 
 temp/

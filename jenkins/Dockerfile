@@ -16,5 +16,22 @@ RUN apt-get update && \
     apt-get install -y trivy docker.io && \
     rm -rf /var/lib/apt/lists/*
 
-USER jenkins
+# gosu lets the entrypoint start as root just long enough to fix docker.sock
+# group access, then drop to the unprivileged jenkins user for the real process.
+ARG GOSU_VERSION=1.17
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) gosuArch='amd64' ;; \
+        arm64) gosuArch='arm64' ;; \
+        *) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    wget -O /usr/local/bin/gosu "https://github.com/tianon/gosu/releases/download/${GOSU_VERSION}/gosu-${gosuArch}" && \
+    chmod +x /usr/local/bin/gosu && \
+    gosu nobody true
+
+COPY docker-entrypoint-wrapper.sh /usr/local/bin/docker-entrypoint-wrapper.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint-wrapper.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint-wrapper.sh"]
 

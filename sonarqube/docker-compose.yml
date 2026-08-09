@@ -11,7 +11,7 @@ services:
       SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
       SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonar
       SONAR_JDBC_USERNAME: sonar
-      SONAR_JDBC_PASSWORD: sonar_secure_password
+      SONAR_JDBC_PASSWORD: ${SONARQUBE_DB_PASSWORD:?Set SONARQUBE_DB_PASSWORD in sonarqube/.env (see .env.example)}
       SONAR_WEB_JAVAOPTS: "-Xmx1G -Xms1G"
       SONAR_CE_JAVAOPTS: "-Xmx1G -Xms1G"
       SONAR_SEARCH_JAVAOPTS: "-Xmx2G -Xms2G -Des.cluster.routing.allocation.disk.threshold_enabled=false"
@@ -43,7 +43,7 @@ services:
 
     environment:
       POSTGRES_USER: sonar
-      POSTGRES_PASSWORD: sonar_secure_password
+      POSTGRES_PASSWORD: ${SONARQUBE_DB_PASSWORD:?Set SONARQUBE_DB_PASSWORD in sonarqube/.env (see .env.example)}
       POSTGRES_DB: sonar
 
     volumes:

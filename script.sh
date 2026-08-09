@@ -9,19 +9,32 @@ MONGO_BIN="$DEV_DIR/mongodb-macos-aarch64--8.2.3/bin/mongod"
 MONGO_DATA="$DEV_DIR/mongodb-macos-aarch64--8.2.3/data/db"
 MONGO_LOG="$DEV_DIR/mongodb-macos-aarch64--8.2.3/mongodb.log"
 
+# 27017 (Mongo's default) is already taken by an unrelated project's
+# `expense-tracker-db` Docker container on this machine. Use a different
+# port for this stack's local mongod; override with MONGO_PORT=xxxxx if needed.
+MONGO_PORT="${MONGO_PORT:-27018}"
+
 start_mongodb() {
   if pgrep -x "mongod" > /dev/null; then
     echo "ℹ️ MongoDB already running"
   else
-    echo "➡️ Starting MongoDB..."
+    if lsof -iTCP:"$MONGO_PORT" -sTCP:LISTEN > /dev/null 2>&1; then
+      echo "❌ Port $MONGO_PORT is already in use by another process:"
+      lsof -iTCP:"$MONGO_PORT" -sTCP:LISTEN
+      echo "   Set MONGO_PORT to a free port and retry, e.g.: MONGO_PORT=27019 ./script.sh mongo-start"
+      return 1
+    fi
+
+    echo "➡️ Starting MongoDB on port $MONGO_PORT..."
     nohup "$MONGO_BIN" \
+      --port "$MONGO_PORT" \
       --dbpath "$MONGO_DATA" \
       > "$MONGO_LOG" 2>&1 &
 
     sleep 2
 
     if pgrep -x "mongod" > /dev/null; then
-      echo "✅ MongoDB started"
+      echo "✅ MongoDB started on port $MONGO_PORT"
     else
       echo "❌ MongoDB failed to start. Check log:"
       echo "   $MONGO_LOG"
@@ -44,7 +57,7 @@ stop_mongodb() {
 start_services() {
   echo "🚀 Starting all services..."
 
-  echo "➡️ StartingMongoDbs..."   1
+  echo "➡️ Starting MongoDB..."
   start_mongodb
 
   echo "➡️ Starting Jenkins..."

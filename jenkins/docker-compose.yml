@@ -16,20 +16,18 @@ services:
     tmpfs:
       - /tmp
 
-    user: root
-    entrypoint: >
-      bash -c "
-      chmod 666 /var/run/docker.sock &&
-      /usr/bin/tini -- /usr/local/bin/jenkins.sh
-      "
-    
+    # No `user: root` / chmod 666 override here — the image's own entrypoint
+    # (docker-entrypoint-wrapper.sh) starts as root just long enough to grant
+    # the jenkins user access to the mounted docker.sock, then drops to the
+    # unprivileged jenkins user via gosu before Jenkins itself starts.
+
     environment:
       - JAVA_OPTS=-Xms512m -Xmx2g
       - NODE_OPTIONS=--max-old-space-size=4096
       - DOCKER_HOST=unix:///var/run/docker.sock
       # Ensure scanner writes cache to the persisted volume
       - SONAR_USER_HOME=/var/jenkins_home/.sonar
-      - HOST_JENKINS_HOME=/Users/sithumraigamage/Development/jenkins/jenkins_home
+      - HOST_JENKINS_HOME=/Users/sithumraigamage/Development/custom-devops-stack/jenkins/jenkins_home
 
     deploy:
       resources:

@@ -20,7 +20,7 @@ This directory (`custom-devops-stack/`) contains the Docker configurations and c
 
 ### 3. MongoDB (local manual install, outside this folder)
 - **Purpose**: General-purpose database used by local projects
-- **Port**: 27017 (default)
+- **Port**: 27018 (default; override with `MONGO_PORT=xxxxx ./script.sh mongo-start`) — not 27017, because an unrelated project's `expense-tracker-db` Docker container already binds 27017 on this machine
 - **Binary**: `../mongodb-macos-aarch64--8.2.3/bin/mongod`
 - **Data Location**: `../mongodb-macos-aarch64--8.2.3/data/db`
 - **Log**: `../mongodb-macos-aarch64--8.2.3/mongodb.log`
@@ -80,7 +80,7 @@ pgrep -x mongod
 ### Access Services
 - **Jenkins**: http://localhost:8080
 - **SonarQube**: http://localhost:9000
-- **MongoDB**: mongodb://localhost:27017
+- **MongoDB**: mongodb://localhost:27018
 
 ## 🔗 Integration Guide
 
@@ -161,11 +161,13 @@ All data is stored on your local machine:
 
 ## 🔐 Security Checklist
 
-- [x] Jenkins not running as root
+- [x] Jenkins process runs as the unprivileged `jenkins` user (drops from root via `gosu` at entrypoint — see `jenkins/docker-entrypoint-wrapper.sh`)
+- [x] Docker socket access is granted via matching group GID, not `chmod 666` (not world-writable)
 - [x] SonarQube using PostgreSQL (production-ready)
+- [x] SonarQube DB password lives in gitignored `sonarqube/.env`, not committed in `docker-compose.yml`
 - [x] Services on isolated network
 - [ ] Change SonarQube admin password (do on first login)
-- [ ] Change PostgreSQL password in `sonarqube/docker-compose.yml`
+- [ ] Rotate the SonarQube DB password (see `sonarqube/.env.example` for the `ALTER USER` command needed since the DB is already initialized)
 - [ ] Generate SonarQube token for Jenkins
 - [ ] Enable HTTPS (if exposing to internet)
 - [ ] Configure firewall rules
@@ -261,10 +263,15 @@ docker network create devops-network
 # Check what's using the port
 lsof -i :8080
 lsof -i :9000
-lsof -i :27017
+lsof -i :27018
 
-# Change ports in docker-compose.yml if needed
+# Change ports in docker-compose.yml (Jenkins/SonarQube) or via
+# MONGO_PORT=xxxxx ./script.sh mongo-start (MongoDB) if needed
 ```
+
+Note: port 27017 (Mongo's default) is already taken on this machine by an
+unrelated project's `expense-tracker-db` Docker container — that's why this
+stack's local `mongod` defaults to 27018 instead.
 
 ## ➕ Adding a New Service to the Stack
 
@@ -299,7 +306,8 @@ lsof -i :27017
 ## ✅ What Was Fixed
 
 ### Jenkins
-- ✅ Removed `user: root` security vulnerability
+- ✅ Jenkins process no longer runs as root — entrypoint starts as root only to fix docker.sock group access, then drops to `jenkins` via `gosu`
+- ✅ Docker socket is no longer `chmod 666`'d (was world-writable; now scoped to the matching group)
 - ✅ Removed unused volume definitions
 - ✅ Added `devops-network` for service communication
 - ✅ Added resource limits (3GB RAM, 2 CPUs)
@@ -307,8 +315,9 @@ lsof -i :27017
 - ✅ All data persists in `./jenkins_home` on your machine
 
 ### SonarQube
-- ✅ Fixed version (was 26.x, now 10.8.0-community)
+- ✅ Running `sonarqube:26.1.0.118079-community`
 - ✅ Added PostgreSQL database (production-ready)
+- ✅ DB password moved out of the committed `docker-compose.yml` into gitignored `sonarqube/.env`
 - ✅ Removed unused volume definitions
 - ✅ Added `devops-network` for service communication
 - ✅ Added resource limits (4GB RAM for SonarQube, 1GB for PostgreSQL)

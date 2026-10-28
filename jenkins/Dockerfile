@@ -1,4 +1,4 @@
-FROM jenkins/jenkins:latest
+FROM jenkins/jenkins:lts-jdk21
 
 USER root
 
@@ -11,9 +11,9 @@ RUN apt-get update && \
 RUN wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | tee /usr/share/keyrings/trivy.gpg > /dev/null && \
     echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb bookworm main" | tee -a /etc/apt/sources.list.d/trivy.list
 
-# Install Trivy and Docker CLI
+# Install Trivy and the Docker CLI only (the engine runs on the host via docker.sock)
 RUN apt-get update && \
-    apt-get install -y trivy docker.io && \
+    apt-get install -y --no-install-recommends trivy docker-cli && \
     rm -rf /var/lib/apt/lists/*
 
 # gosu lets the entrypoint start as root just long enough to fix docker.sock

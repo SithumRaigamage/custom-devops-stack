@@ -27,7 +27,7 @@ services:
       - DOCKER_HOST=unix:///var/run/docker.sock
       # Ensure scanner writes cache to the persisted volume
       - SONAR_USER_HOME=/var/jenkins_home/.sonar
-      - HOST_JENKINS_HOME=/Users/sithumraigamage/Development/custom-devops-stack/jenkins/jenkins_home
+      - HOST_JENKINS_HOME=/Users/sithumraigamage/Other/02-DevOps-Lab/custom-devops-stack/jenkins/jenkins_home
 
     deploy:
       resources:

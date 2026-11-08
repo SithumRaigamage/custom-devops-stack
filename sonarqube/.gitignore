@@ -28,7 +28,7 @@ __pycache__/
 # SonarQube
 .data/
 .temp/
-extensions/downloads/
+extensions/
 web/deploy/plugins/
 
 # PostgreSQL

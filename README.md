@@ -298,6 +298,7 @@ stack's local `mongod` defaults to 27018 instead.
 
 ## 📚 Additional Resources
 
+- [Tools roadmap](docs/TOOLS-ROADMAP.md) — tools to add to this stack, priorities and resource notes
 - [Jenkins Documentation](https://www.jenkins.io/doc/)
 - [SonarQube Documentation](https://docs.sonarqube.org/)
 - [Docker Compose Documentation](https://docs.docker.com/compose/)

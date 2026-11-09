@@ -1,2 +1,3 @@
 # Saved docker image tars (large, machine-local)
 images/
+.claude/

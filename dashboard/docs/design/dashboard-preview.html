@@ -1,0 +1,1181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DevOps Stack Dashboard</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:var(--accentText)}a:hover{opacity:.8}
+*{box-sizing:border-box}
+button{font-family:inherit}
+input,select{font-family:inherit}
+@keyframes dcpulse{0%{opacity:1}50%{opacity:.35}100%{opacity:1}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+<div style="display: flex; flex-wrap: wrap; min-height: 100vh">
+
+<aside style="flex: 1 1 220px; background: var(--sidebar); border-right: 1px solid var(--border); padding: 20px 14px; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 8px">
+<div style="width: 34px; height: 34px; border-radius: 9px; background: var(--accent); display: flex; align-items: center; justify-content: center">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke: var(--accentFg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+</div>
+<div style="display: flex; flex-direction: column">
+<span style="font-weight: 700; font-size: 15px; letter-spacing: -0.01em">StackPilot</span>
+<span style="font-size: 12px; color: var(--muted)">Custom DevOps stack</span>
+</div>
+</div>
+
+<nav aria-label="Main" style="display: flex; flex-direction: column; gap: 2px">
+<sc-for list="{{navItems}}" as="item" hint-placeholder-count="7">
+<button type="button" onClick="{{item.go}}" aria-current="{{item.current}}" style="{{item.style}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{item.icon}}"></path></svg>
+<span style="flex: 1; text-align: left; color: var(--muted)">{{item.label}}</span>
+<sc-if value="{{item.hasBadge}}" hint-placeholder-val="{{ false }}">
+<span style="font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: var(--badBg); color: var(--bad)">{{item.badge}}</span>
+</sc-if>
+</button>
+</sc-for>
+</nav>
+
+<div style="margin-top: auto; background: var(--card2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted)">Stack root</span>
+<code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg2); word-break: break-all">~/Other/02-DevOps-Lab/custom-devops-stack</code>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted2)">
+<span style="width: 7px; height: 7px; border-radius: 50%; background: var(--ok)"></span>
+Docker Desktop running
+</div>
+</div>
+</aside>
+
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 28px; border-bottom: 1px solid var(--border); background: var(--bg)">
+<label style="flex: 1 1 260px; display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 14px; background: var(--card2); border: 1px solid var(--border2); border-radius: 10px; color: var(--muted)">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35"></path></svg>
+<span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search services</span>
+<input type="search" value="{{query}}" onInput="{{onQuery}}" placeholder="Search services, builds, logs…" style="flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: var(--fg); font-size: 14px">
+<kbd style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); border: 1px solid var(--border2); border-radius: 5px; padding: 1px 6px">⌘K</kbd>
+</label>
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+<button type="button" onClick="{{startAll}}" style="display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent); color: var(--accentFg); font-size: 13px; font-weight: 700; cursor: pointer">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4l14 8-14 8z"></path></svg>
+Start All
+</button>
+<button type="button" onClick="{{stopAll}}" style="display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--border2); background: var(--card2); color: var(--fg); font-size: 13px; font-weight: 600; cursor: pointer">
+<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h12v12H6z"></path></svg>
+Stop All
+</button>
+<div style="position: relative">
+<button type="button" onClick="{{toggleThemes}}" aria-expanded="{{themeOpenAttr}}" aria-label="{{themeButtonLabel}}" style="display: inline-flex; align-items: center; gap: 10px; height: 42px; padding: 0 12px 0 10px; border-radius: 10px; border: 1px solid var(--border2); background: var(--card2); color: var(--fg); font-size: 13px; font-weight: 600; cursor: pointer">
+<span style="{{themeSwatch}}"></span>
+<span style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{themeName}}</span>
+<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+</button>
+<sc-if value="{{themeOpen}}" hint-placeholder-val="{{ false }}">
+<div role="dialog" aria-label="Choose a theme" style="position: absolute; right: 0; top: 50px; width: 400px; max-width: 90vw; background: var(--card); border: 1px solid var(--border2); border-radius: 14px; box-shadow: 0 18px 50px rgba(0,0,0,0.35); padding: 16px; z-index: 40; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; align-items: center; gap: 8px">
+<div style="flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0">
+<span style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted)">Theme {{themeNumber}} of {{themeCount}}</span>
+<span style="font-size: 16px; font-weight: 700">{{themeName}}</span>
+</div>
+<button type="button" onClick="{{prevTheme}}" aria-label="Previous theme" style="width: 40px; height: 40px; border-radius: 9px; border: 1px solid var(--border2); background: var(--card2); color: var(--fg); display: inline-flex; align-items: center; justify-content: center; cursor: pointer">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+</button>
+<button type="button" onClick="{{nextTheme}}" aria-label="Next theme" style="width: 40px; height: 40px; border-radius: 9px; border: 1px solid var(--border2); background: var(--card2); color: var(--fg); display: inline-flex; align-items: center; justify-content: center; cursor: pointer">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"></path></svg>
+</button>
+</div>
+<div style="display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px">
+<sc-for list="{{themeChips}}" as="c" hint-placeholder-count="50">
+<button type="button" onClick="{{c.pick}}" aria-label="{{c.name}}" aria-pressed="{{c.active}}" title="{{c.name}}" style="{{c.style}}"></button>
+</sc-for>
+</div>
+<div role="group" aria-label="Mode" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 4px; background: var(--card2); border: 1px solid var(--border); border-radius: 10px">
+<button type="button" onClick="{{setLight}}" aria-pressed="{{lightPressed}}" style="{{lightSegStyle}}">
+<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path></svg>Light
+</button>
+<button type="button" onClick="{{setDark}}" aria-pressed="{{darkPressed}}" style="{{darkSegStyle}}">
+<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>Dark
+</button>
+</div>
+</div>
+</sc-if>
+</div>
+<button type="button" onClick="{{toggleMode}}" aria-label="{{modeLabel}}" title="{{modeLabel}}" style="width: 44px; height: 42px; border-radius: 10px; border: 1px solid var(--border2); background: var(--card2); color: var(--fg2); display: inline-flex; align-items: center; justify-content: center; cursor: pointer">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{modeIcon}}"></path></svg>
+</button>
+<div style="position: relative">
+<button type="button" onClick="{{toggleNotif}}" aria-label="Notifications" style="position: relative; width: 44px; height: 42px; border-radius: 10px; border: 1px solid var(--border2); background: var(--card2); color: var(--fg2); display: inline-flex; align-items: center; justify-content: center; cursor: pointer">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+<sc-if value="{{hasUnread}}" hint-placeholder-val="{{ true }}">
+<span style="position: absolute; top: 6px; right: 7px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: var(--accentFg); font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{unread}}</span>
+</sc-if>
+</button>
+<sc-if value="{{notifOpen}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; right: 0; top: 50px; width: 320px; max-width: 86vw; background: var(--card2); border: 1px solid var(--border2); border-radius: 12px; box-shadow: 0 18px 50px rgba(0,0,0,0.55); padding: 8px; z-index: 30">
+<div style="padding: 8px 10px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em">Notifications</div>
+<sc-for list="{{notifItems}}" as="n" hint-placeholder-count="4">
+<div style="display: flex; gap: 10px; padding: 10px; border-radius: 8px">
+<span style="{{n.dot}}"></span>
+<div style="display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 13px; color: var(--fg)">{{n.text}}</span>
+<span style="font-size: 12px; color: var(--muted)">{{n.time}}</span>
+</div>
+</div>
+</sc-for>
+</div>
+</sc-if>
+</div>
+<div aria-label="Sithum Raigamage" role="img" style="width: 42px; height: 42px; border-radius: 50%; background: var(--accentSoft); border: 1px solid var(--accentBorder); color: var(--accentText); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px">SR</div>
+</div>
+</header>
+
+<main style="padding: 28px; display: flex; flex-direction: column; gap: 24px; max-width: 1360px; width: 100%">
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em">{{pageTitle}}</h1>
+<p style="margin: 0; color: var(--muted); font-size: 14px">{{pageSub}}</p>
+</div>
+<span style="font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 8px"><span style="width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: dcpulse 2s infinite"></span>Live · refreshing every 4 s</span>
+</div>
+
+<sc-if value="{{isOverview}}" hint-placeholder-val="{{ true }}">
+<section aria-label="Summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px">
+<sc-for list="{{stats}}" as="st" hint-placeholder-count="4">
+<div style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+<span style="font-size: 13px; color: var(--muted)">{{st.label}}</span>
+<div style="display: flex; align-items: baseline; gap: 8px">
+<span style="{{st.valueStyle}}">{{st.value}}</span>
+<span style="font-size: 13px; color: var(--muted)">{{st.suffix}}</span>
+</div>
+<span style="font-size: 12px; color: var(--muted2)">{{st.note}}</span>
+</div>
+</sc-for>
+</section>
+</sc-if>
+
+<sc-if value="{{showGrid}}" hint-placeholder-val="{{ true }}">
+<section aria-label="Services" style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+<h2 style="margin: 0; font-size: 16px; font-weight: 600">Services</h2>
+<span style="font-size: 12px; color: var(--muted)">{{serviceCountLabel}}</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px">
+<sc-for list="{{serviceCards}}" as="s" hint-placeholder-count="3">
+<article style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: flex-start; gap: 12px">
+<div style="width: 40px; height: 40px; border-radius: 10px; background: var(--card2); border: 1px solid var(--border2); display: flex; align-items: center; justify-content: center; color: var(--accentText); flex-shrink: 0">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{s.icon}}"></path></svg>
+</div>
+<div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+<h3 style="margin: 0; font-size: 16px; font-weight: 600">{{s.name}}</h3>
+<span style="font-size: 12px; color: var(--muted)">{{s.desc}}</span>
+</div>
+<span style="{{s.badgeStyle}}"><span style="{{s.dotStyle}}"></span>{{s.statusLabel}}</span>
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 3px"><dt style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em">Port</dt><dd style="margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 13px">{{s.port}}</dd></div>
+<div style="display: flex; flex-direction: column; gap: 3px"><dt style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em">Uptime</dt><dd style="margin: 0; font-size: 13px">{{s.uptime}}</dd></div>
+<div style="display: flex; flex-direction: column; gap: 3px"><dt style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em">Memory</dt><dd style="margin: 0; font-size: 13px">{{s.memLabel}}</dd></div>
+</dl>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between; font-size: 12px"><span style="color: var(--muted2)">CPU</span><span style="font-family: 'JetBrains Mono', monospace; color: var(--fg2)">{{s.cpuText}}</span></div>
+<div style="height: 6px; background: var(--track); border-radius: 999px; overflow: hidden"><div style="{{s.cpuBar}}"></div></div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; justify-content: space-between; font-size: 12px"><span style="color: var(--muted2)">Memory</span><span style="font-family: 'JetBrains Mono', monospace; color: var(--fg2)">{{s.memText}}</span></div>
+<div style="height: 6px; background: var(--track); border-radius: 999px; overflow: hidden"><div style="{{s.memBar}}"></div></div>
+</div>
+</div>
+<sc-if value="{{s.hasNote}}" hint-placeholder-val="{{ false }}">
+<div style="font-size: 12px; color: var(--warn); background: var(--warnBg); border: 1px solid var(--warnBg); border-radius: 8px; padding: 8px 10px">{{s.note}}</div>
+</sc-if>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px; border-top: 1px solid var(--track)">
+<button type="button" onClick="{{s.start}}" disabled="{{s.startDisabled}}" style="{{s.startStyle}}">
+<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4l14 8-14 8z"></path></svg>Start
+</button>
+<button type="button" onClick="{{s.stop}}" disabled="{{s.stopDisabled}}" style="{{s.stopStyle}}">
+<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h12v12H6z"></path></svg>Stop
+</button>
+<button type="button" onClick="{{s.restart}}" disabled="{{s.restartDisabled}}" style="{{s.restartStyle}}">
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"></path></svg>Restart
+</button>
+<a href="{{s.url}}" target="_blank" rel="noopener" aria-label="{{s.openLabel}}" style="display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border2); background: var(--card2); color: var(--fg2); font-size: 13px; font-weight: 600; text-decoration: none">
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M10 14L21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>Open
+</a>
+<button type="button" onClick="{{s.viewLogs}}" style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 12px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--accentText); font-size: 13px; font-weight: 600; cursor: pointer">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6M12 19h8"></path></svg>View Logs
+</button>
+</div>
+</article>
+</sc-for>
+</div>
+<sc-if value="{{noResults}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 28px; text-align: center; color: var(--muted); border: 1px dashed var(--border2); border-radius: 14px">No services match “{{query}}”.</div>
+</sc-if>
+</section>
+</sc-if>
+
+<sc-if value="{{isOverview}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-wrap: wrap; gap: 16px">
+<section aria-label="Resource usage" style="flex: 999 1 520px; min-width: 0; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<h2 style="margin: 0; font-size: 16px; font-weight: 600">Stack resources</h2>
+<span style="font-size: 12px; color: var(--muted)">CPU and memory across all containers, last hour</span>
+</div>
+<div style="display: flex; gap: 16px; font-size: 12px; color: var(--fg2)">
+<span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 14px; height: 3px; border-radius: 2px; background: var(--accent)"></span>CPU {{cpuNow}}%</span>
+<span style="display: inline-flex; align-items: center; gap: 6px"><span style="width: 14px; height: 3px; border-radius: 2px; background: var(--series2)"></span>Memory {{memNow}}%</span>
+</div>
+</div>
+<svg viewBox="0 0 600 170" preserveAspectRatio="none" role="img" aria-label="Line chart of CPU and memory use over the last hour" style="width: 100%; height: 200px; display: block">
+<line x1="0" y1="10" x2="600" y2="10" style="stroke: var(--track)" stroke-width="1"></line>
+<line x1="0" y1="47.5" x2="600" y2="47.5" style="stroke: var(--track)" stroke-width="1"></line>
+<line x1="0" y1="85" x2="600" y2="85" style="stroke: var(--track)" stroke-width="1"></line>
+<line x1="0" y1="122.5" x2="600" y2="122.5" style="stroke: var(--track)" stroke-width="1"></line>
+<line x1="0" y1="160" x2="600" y2="160" style="stroke: var(--border2)" stroke-width="1"></line>
+<polygon points="{{cpuArea}}" style="fill: var(--accentSoft)"></polygon>
+<polyline points="{{memLine}}" fill="none" style="stroke: var(--series2)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"></polyline>
+<polyline points="{{cpuLine}}" fill="none" style="stroke: var(--accent)" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"></polyline>
+</svg>
+<div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', monospace">
+<span>-60m</span><span>-45m</span><span>-30m</span><span>-15m</span><span>now</span>
+</div>
+</section>
+
+<section aria-label="Recent activity" style="flex: 1 1 320px; min-width: 0; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 16px; font-weight: 600">Recent activity</h2>
+<ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column">
+<sc-for list="{{activityItems}}" as="a" hint-placeholder-count="5">
+<li style="display: flex; gap: 12px">
+<div style="display: flex; flex-direction: column; align-items: center; width: 10px">
+<span style="{{a.dot}}"></span>
+<span style="flex: 1; width: 1px; background: var(--border); min-height: 22px"></span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px; padding-bottom: 14px">
+<span style="font-size: 13px; color: var(--fg)">{{a.text}}</span>
+<span style="font-size: 12px; color: var(--muted)">{{a.time}}</span>
+</div>
+</li>
+</sc-for>
+</ol>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isServices}}" hint-placeholder-val="{{ false }}">
+<section aria-label="Compose stacks" style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 16px; font-weight: 600">Compose stacks</h2>
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 640px; border-collapse: collapse; font-size: 13px">
+<thead>
+<tr style="text-align: left; color: var(--muted); font-size: 12px">
+<th style="padding: 10px 12px; font-weight: 500; border-bottom: 1px solid var(--border)">Service</th>
+<th style="padding: 10px 12px; font-weight: 500; border-bottom: 1px solid var(--border)">Folder</th>
+<th style="padding: 10px 12px; font-weight: 500; border-bottom: 1px solid var(--border)">Image</th>
+<th style="padding: 10px 12px; font-weight: 500; border-bottom: 1px solid var(--border)">Health check</th>
+<th style="padding: 10px 12px; font-weight: 500; border-bottom: 1px solid var(--border)">Status</th>
+</tr>
+</thead>
+<tbody>
+<sc-for list="{{serviceCards}}" as="s" hint-placeholder-count="3">
+<tr>
+<td style="padding: 12px; border-bottom: 1px solid var(--track); font-weight: 600">{{s.name}}</td>
+<td style="padding: 12px; border-bottom: 1px solid var(--track); font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg2)">{{s.folder}}</td>
+<td style="padding: 12px; border-bottom: 1px solid var(--track); font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg2)">{{s.image}}</td>
+<td style="padding: 12px; border-bottom: 1px solid var(--track); font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg2)">{{s.health}}</td>
+<td style="padding: 12px; border-bottom: 1px solid var(--track)"><span style="{{s.badgeStyle}}"><span style="{{s.dotStyle}}"></span>{{s.statusLabel}}</span></td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{isJenkins}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<section aria-label="Build summary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
+<sc-for list="{{buildStats}}" as="b" hint-placeholder-count="4">
+<div style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 13px; color: var(--muted)">{{b.label}}</span>
+<span style="font-size: 26px; font-weight: 700; letter-spacing: -0.02em">{{b.value}}</span>
+</div>
+</sc-for>
+</section>
+<section aria-label="Recent builds" style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+<h2 style="margin: 0; font-size: 16px; font-weight: 600">Recent builds</h2>
+<a href="http://localhost:8080" target="_blank" rel="noopener" style="font-size: 13px; font-weight: 600; text-decoration: none">Open Jenkins</a>
+</div>
+<div style="overflow-x: auto">
+<table style="width: 100%; min-width: 760px; border-collapse: collapse; font-size: 13px">
+<thead>
+<tr style="text-align: left; color: var(--muted); font-size: 12px">
+<th style="padding: 10px 12px; font-weight: 500; border-bottom: 1px solid var(--border)">Build</th>
+<th style="padding: 10px 12px; font-weight: 500; border-bottom: 1px solid var(--border)">Job</th>
+<th style="padding: 10px 12px; font-weight: 500; border-bottom: 1px solid var(--border)">Branch</th>
+<th style="padding: 10px 12px; font-weight: 500; border-bottom: 1px solid var(--border)">Status</th>
+<th style="padding: 10px 12px; font-weight: 500; border-bottom: 1px solid var(--border)">Duration</th>
+<th style="padding: 10px 12px; font-weight: 500; border-bottom: 1px solid var(--border)">Started</th>
+<th style="padding: 10px 12px; font-weight: 500; border-bottom: 1px solid var(--border)"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Actions</span></th>
+</tr>
+</thead>
+<tbody>
+<sc-for list="{{buildRows}}" as="r" hint-placeholder-count="6">
+<tr>
+<td style="padding: 12px; border-bottom: 1px solid var(--track); font-family: 'JetBrains Mono', monospace; font-weight: 500">#{{r.num}}</td>
+<td style="padding: 12px; border-bottom: 1px solid var(--track); font-weight: 600">{{r.job}}</td>
+<td style="padding: 12px; border-bottom: 1px solid var(--track); font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg2)">{{r.branch}}</td>
+<td style="padding: 12px; border-bottom: 1px solid var(--track)"><span style="{{r.badgeStyle}}"><span style="{{r.dotStyle}}"></span>{{r.statusLabel}}</span></td>
+<td style="padding: 12px; border-bottom: 1px solid var(--track); color: var(--fg2)">{{r.duration}}</td>
+<td style="padding: 12px; border-bottom: 1px solid var(--track); color: var(--muted2)">{{r.when}}</td>
+<td style="padding: 12px; border-bottom: 1px solid var(--track); text-align: right">
+<button type="button" onClick="{{r.rebuild}}" disabled="{{r.busy}}" aria-label="{{r.rebuildLabel}}" style="{{r.btnStyle}}">
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5"></path></svg>Rebuild
+</button>
+</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isSonar}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<div role="group" aria-label="Project" style="display: flex; flex-wrap: wrap; gap: 8px">
+<sc-for list="{{sonarTabs}}" as="t" hint-placeholder-count="3">
+<button type="button" onClick="{{t.pick}}" aria-pressed="{{t.active}}" style="{{t.style}}">{{t.name}}</button>
+</sc-for>
+</div>
+<section aria-label="Quality gate" style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 20px">
+<div style="display: flex; flex-direction: column; gap: 6px; flex: 1 1 240px">
+<span style="font-size: 13px; color: var(--muted)">Quality gate · {{sonar.name}}</span>
+<span style="{{sonar.gateStyle}}">{{sonar.gate}}</span>
+<span style="font-size: 12px; color: var(--muted2)">Last analysis {{sonar.analysed}} · {{sonar.loc}} lines of code</span>
+</div>
+<div style="display: flex; gap: 10px; flex-wrap: wrap">
+<sc-for list="{{sonar.ratings}}" as="g" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 92px; padding: 12px; background: var(--card2); border: 1px solid var(--border); border-radius: 10px">
+<span style="{{g.style}}">{{g.grade}}</span>
+<span style="font-size: 12px; color: var(--muted2)">{{g.label}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+<section aria-label="Issues" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
+<sc-for list="{{sonar.metrics}}" as="m" hint-placeholder-count="4">
+<div style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 13px; color: var(--muted)">{{m.label}}</span>
+<span style="{{m.style}}">{{m.value}}</span>
+<span style="font-size: 12px; color: var(--muted2)">{{m.note}}</span>
+</div>
+</sc-for>
+</section>
+<section aria-label="Coverage" style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; justify-content: space-between; gap: 12px; font-size: 13px"><span style="font-weight: 600">Coverage</span><span style="color: var(--muted)">Target 80% · Duplications {{sonar.dup}}%</span></div>
+<div style="position: relative; height: 10px; background: var(--track); border-radius: 999px; overflow: hidden">
+<div style="{{sonar.covBar}}"></div>
+<div style="position: absolute; left: 80%; top: 0; bottom: 0; width: 2px; background: var(--fg); opacity: 0.6"></div>
+</div>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--fg2)">{{sonar.coverage}}% covered</span>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isOllama}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 16px">
+<section aria-label="Ollama endpoint" style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 20px">
+<div style="display: flex; flex-direction: column; gap: 4px; flex: 1 1 260px">
+<span style="font-size: 13px; color: var(--muted)">Endpoint</span>
+<code style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--fg)">http://127.0.0.1:11434</code>
+</div>
+<span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--ok); background: var(--okBg)"><span style="width: 6px; height: 6px; border-radius: 50%; background: var(--ok)"></span>Reachable</span>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 13px; color: var(--muted)">Loaded in memory</span>
+<span style="font-weight: 600">{{loadedLabel}}</span>
+</div>
+</section>
+<section aria-label="Models" style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 6px">
+<h2 style="margin: 0 0 8px; font-size: 16px; font-weight: 600">Installed models</h2>
+<sc-for list="{{models}}" as="md" hint-placeholder-count="5">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 12px; border-radius: 10px; background: var(--card2)">
+<div style="flex: 1 1 220px; display: flex; flex-direction: column; gap: 2px">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 500">{{md.name}}</span>
+<span style="font-size: 12px; color: var(--muted)">{{md.use}}</span>
+</div>
+<span style="font-size: 13px; color: var(--fg2); min-width: 64px">{{md.size}}</span>
+<button type="button" onClick="{{md.toggle}}" style="{{md.btnStyle}}">{{md.btnLabel}}</button>
+</div>
+</sc-for>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isAssistant}}" hint-placeholder-val="{{ false }}">
+<section aria-label="AI Assistant" style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; display: flex; flex-direction: column; min-height: 600px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--border)">
+<div style="display: flex; align-items: center; gap: 10px">
+<div style="width: 32px; height: 32px; border-radius: 8px; background: var(--accentSoft); color: var(--accentText); display: flex; align-items: center; justify-content: center">
+<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"></path></svg>
+</div>
+<div style="display: flex; flex-direction: column">
+<span style="font-weight: 600">Stack Assistant</span>
+<span style="font-size: 12px; color: var(--muted)">{{assistantModel}} · reads Jenkins, SonarQube and container logs</span>
+</div>
+</div>
+<button type="button" onClick="{{clearChat}}" style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border2); background: var(--card2); color: var(--fg2); font-size: 13px; font-weight: 600; cursor: pointer">New chat</button>
+</div>
+<div aria-live="polite" style="flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 20px; overflow-y: auto; max-height: 520px">
+<sc-for list="{{chat}}" as="c" hint-placeholder-count="2">
+<div style="{{c.rowStyle}}">
+<div style="{{c.bubbleStyle}}">{{c.text}}</div>
+</div>
+</sc-for>
+<sc-if value="{{thinking}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex"><div style="padding: 12px 16px; border-radius: 14px; background: var(--card2); color: var(--muted); font-size: 13px; animation: dcpulse 1.2s infinite">Checking your stack…</div></div>
+</sc-if>
+</div>
+<div style="padding: 14px 20px 20px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border)">
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<sc-for list="{{suggestions}}" as="q" hint-placeholder-count="3">
+<button type="button" onClick="{{q.ask}}" style="height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border2); background: var(--card2); color: var(--fg2); font-size: 12px; cursor: pointer">{{q.text}}</button>
+</sc-for>
+</div>
+<form onSubmit="{{onSend}}" style="display: flex; gap: 10px">
+<label for="ask" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Ask the assistant</label>
+<input id="ask" type="text" value="{{draft}}" onInput="{{onDraft}}" placeholder="Ask about builds, health, logs…" autocomplete="off" style="flex: 1; min-width: 0; height: 46px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border2); background: var(--input); color: var(--fg); font-size: 14px; outline: none">
+<button type="submit" aria-label="Send" style="width: 46px; height: 46px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accentFg); display: inline-flex; align-items: center; justify-content: center; cursor: pointer">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"></path></svg>
+</button>
+</form>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{isSettings}}" hint-placeholder-val="{{ false }}">
+<section aria-label="Settings" style="background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 22px; max-width: 760px">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label for="root" style="font-size: 13px; font-weight: 600">Stack root folder</label>
+<input id="root" type="text" value="~/Other/02-DevOps-Lab/custom-devops-stack" style="height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border2); background: var(--input); color: var(--fg); font-family: 'JetBrains Mono', monospace; font-size: 13px">
+<span style="font-size: 12px; color: var(--muted)">Each service folder inside it needs its own docker-compose.yml.</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label for="refresh" style="font-size: 13px; font-weight: 600">Health check interval</label>
+<select id="refresh" style="height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--border2); background: var(--input); color: var(--fg); font-size: 14px; max-width: 240px">
+<option>Every 4 seconds</option>
+<option>Every 10 seconds</option>
+<option>Every 30 seconds</option>
+</select>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<sc-for list="{{toggles}}" as="tg" hint-placeholder-count="3">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--track)">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<span style="font-size: 14px; font-weight: 500">{{tg.label}}</span>
+<span style="font-size: 12px; color: var(--muted)">{{tg.hint}}</span>
+</div>
+<button type="button" onClick="{{tg.flip}}" aria-pressed="{{tg.on}}" aria-label="{{tg.label}}" style="{{tg.track}}"><span style="{{tg.knob}}"></span></button>
+</div>
+</sc-for>
+</div>
+<div style="display: flex; align-items: center; gap: 12px">
+<button type="button" onClick="{{save}}" style="height: 44px; padding: 0 18px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accentFg); font-size: 14px; font-weight: 700; cursor: pointer">Save settings</button>
+<sc-if value="{{saved}}" hint-placeholder-val="{{ false }}"><span style="font-size: 13px; color: var(--accentText)">Saved</span></sc-if>
+</div>
+</section>
+</sc-if>
+
+</main>
+</div>
+</div>
+
+<sc-if value="{{logsOpen}}" hint-placeholder-val="{{ false }}">
+<div style="position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end">
+<button type="button" onClick="{{closeLogs}}" aria-label="Close logs" style="position: absolute; inset: 0; border: 0; background: var(--overlay); cursor: default"></button>
+<aside aria-label="Container logs" style="position: relative; width: 600px; max-width: 100%; height: 100%; background: var(--sidebar); border-left: 1px solid var(--border2); display: flex; flex-direction: column; box-shadow: -24px 0 60px rgba(0,0,0,0.5)">
+<div style="display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border)">
+<div style="flex: 1; display: flex; flex-direction: column; gap: 2px">
+<span style="font-weight: 600; font-size: 16px">{{logService.name}} logs</span>
+<span style="font-size: 12px; color: var(--muted); font-family: 'JetBrains Mono', monospace">docker compose logs --tail 100 · {{logService.folder}}</span>
+</div>
+<span style="{{logService.badgeStyle}}"><span style="{{logService.dotStyle}}"></span>{{logService.statusLabel}}</span>
+<button type="button" onClick="{{closeLogs}}" aria-label="Close logs" style="width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border2); background: var(--card2); color: var(--fg2); display: inline-flex; align-items: center; justify-content: center; cursor: pointer">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+</button>
+</div>
+<div style="flex: 1; overflow-y: auto; padding: 14px 20px; background: #060A0A; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.7">
+<sc-for list="{{logLines}}" as="l" hint-placeholder-count="8">
+<div style="display: flex; gap: 12px">
+<span style="color: #6F8583; flex-shrink: 0">{{l.t}}</span>
+<span style="{{l.lvlStyle}}">{{l.lvl}}</span>
+<span style="color: #D5E3E1; word-break: break-word">{{l.msg}}</span>
+</div>
+</sc-for>
+</div>
+</aside>
+</div>
+</sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["Midnight Teal", "Ocean", "Electric Blue", "Cobalt", "Indigo", "Violet", "Purple", "Orchid", "Fuchsia", "Magenta", "Pink", "Rose", "Rose Noir", "Crimson", "Scarlet", "Tomato", "Ember", "Orange", "Tangerine", "Amber Ops", "Gold", "Sunflower", "Lemon", "Chartreuse", "Lime", "Fern", "Green", "Emerald", "Jade", "Mint", "Aqua", "Cyan", "Sky", "Azure", "Royal", "Periwinkle", "Lavender", "Plum", "Mauve", "Blush", "Terracotta", "Copper", "Sand", "Olive", "Sage", "Moss", "Steel", "Slate", "Graphite", "Mono"], "default": "Midnight Teal", "section": "Theme"}, "dark": {"editor": "boolean", "default": true, "section": "Theme"}, "$preview": {"width": 1440, "height": 1100}}'>
+var ICONS = {
+  overview: 'M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z',
+  services: 'M2 4h20v6H2zM2 14h20v6H2zM6 7h.01M6 17h.01',
+  jenkins: 'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9',
+  sonar: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4',
+  ollama: 'M4 4h16v16H4zM9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3',
+  assistant: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+  settings: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
+  webui: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM8 9h8M8 13h5'
+};
+
+var BASE = {
+  jenkins: { cpu: 18, mem: 42, memLabel: '1.3 GB' },
+  sonarqube: { cpu: 34, mem: 64, memLabel: '2.1 GB' },
+  openwebui: { cpu: 9, mem: 28, memLabel: '860 MB' }
+};
+
+var STATUS = {
+  healthy: { label: 'Healthy', fg: 'var(--ok)', bg: 'var(--okBg)' },
+  unhealthy: { label: 'Unhealthy', fg: 'var(--warn)', bg: 'var(--warnBg)' },
+  stopped: { label: 'Stopped', fg: 'var(--bad)', bg: 'var(--badBg)' },
+  starting: { label: 'Starting…', fg: 'var(--info)', bg: 'var(--infoBg)' },
+  stopping: { label: 'Stopping…', fg: 'var(--info)', bg: 'var(--infoBg)' },
+  restarting: { label: 'Restarting…', fg: 'var(--info)', bg: 'var(--infoBg)' },
+  success: { label: 'Success', fg: 'var(--ok)', bg: 'var(--okBg)' },
+  failed: { label: 'Failed', fg: 'var(--bad)', bg: 'var(--badBg)' },
+  unstable: { label: 'Unstable', fg: 'var(--warn)', bg: 'var(--warnBg)' },
+  running: { label: 'Running…', fg: 'var(--info)', bg: 'var(--infoBg)' },
+  aborted: { label: 'Aborted', fg: 'var(--muted2)', bg: 'var(--neutralBg)' }
+};
+
+var ACT_COLORS = { start: 'var(--ok)', stop: 'var(--bad)', build: 'var(--info)', warn: 'var(--warn)', fail: 'var(--bad)' };
+var GRADE_COLORS = { A: '#2DD4BF', B: '#A3E635', C: '#FBBF24', D: '#FB923C', E: '#F87171' };
+
+var PAGES = [
+  { id: 'overview', label: 'Overview', title: 'Overview', sub: 'Everything running in your custom DevOps stack.' },
+  { id: 'services', label: 'Services', title: 'Services', sub: 'Start, stop and inspect each Docker Compose stack.' },
+  { id: 'jenkins', label: 'Jenkins', title: 'Jenkins', sub: 'Recent pipeline runs from your Jenkins server.' },
+  { id: 'sonar', label: 'SonarQube', title: 'SonarQube', sub: 'Code quality and quality gates for your projects.' },
+  { id: 'ollama', label: 'Ollama', title: 'Ollama', sub: 'Local models that power the assistant and Open WebUI.' },
+  { id: 'assistant', label: 'AI Assistant', title: 'AI Assistant', sub: 'Ask questions about your stack in plain language.' },
+  { id: 'settings', label: 'Settings', title: 'Settings', sub: 'Where your stack lives and how often it is checked.' }
+];
+
+function badge(st) {
+  var m = STATUS[st] || STATUS.stopped;
+  return {
+    badgeStyle: 'display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;color:' + m.fg + ';background:' + m.bg,
+    dotStyle: 'width:6px;height:6px;border-radius:50%;background:' + m.fg + (/…/.test(m.label) ? ';animation:dcpulse 1s infinite' : ''),
+    statusLabel: m.label
+  };
+}
+
+function btnStyle(kind, disabled) {
+  var base = 'display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 12px;border-radius:8px;font-size:13px;font-weight:600;';
+  var look = kind === 'primary'
+    ? 'border:1px solid var(--accent);background:var(--accent);color:var(--accentFg);'
+    : 'border:1px solid var(--border2);background:var(--card2);color:var(--fg2);';
+  return base + look + (disabled ? 'opacity:.38;cursor:not-allowed;' : 'cursor:pointer;');
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function nowTime() { return new Date().toTimeString().slice(0, 8); }
+function pts(arr) {
+  return arr.map(function (v, i) { return (i * 600 / (arr.length - 1)).toFixed(1) + ',' + (160 - v * 1.5).toFixed(1); }).join(' ');
+}
+
+var THEMES = [{"n": "Midnight Teal", "h": 173, "s": 80, "t": 18}, {"n": "Ocean", "h": 200, "s": 80, "t": 20}, {"n": "Electric Blue", "h": 217, "s": 90, "t": 18}, {"n": "Cobalt", "h": 225, "s": 85, "t": 22}, {"n": "Indigo", "h": 239, "s": 80, "t": 20}, {"n": "Violet", "h": 258, "s": 80, "t": 20}, {"n": "Purple", "h": 270, "s": 75, "t": 20}, {"n": "Orchid", "h": 285, "s": 70, "t": 18}, {"n": "Fuchsia", "h": 300, "s": 80, "t": 18}, {"n": "Magenta", "h": 320, "s": 80, "t": 18}, {"n": "Pink", "h": 330, "s": 85, "t": 18}, {"n": "Rose", "h": 345, "s": 85, "t": 18}, {"n": "Rose Noir", "h": 350, "s": 90, "t": 10}, {"n": "Crimson", "h": 355, "s": 80, "t": 16}, {"n": "Scarlet", "h": 2, "s": 85, "t": 16}, {"n": "Tomato", "h": 10, "s": 85, "t": 16}, {"n": "Ember", "h": 18, "s": 90, "t": 16}, {"n": "Orange", "h": 25, "s": 95, "t": 16}, {"n": "Tangerine", "h": 30, "s": 95, "t": 14}, {"n": "Amber Ops", "h": 38, "s": 92, "t": 12}, {"n": "Gold", "h": 45, "s": 90, "t": 14}, {"n": "Sunflower", "h": 50, "s": 95, "t": 14}, {"n": "Lemon", "h": 56, "s": 90, "t": 14}, {"n": "Chartreuse", "h": 75, "s": 75, "t": 14}, {"n": "Lime", "h": 85, "s": 70, "t": 14}, {"n": "Fern", "h": 100, "s": 55, "t": 14}, {"n": "Green", "h": 130, "s": 60, "t": 16}, {"n": "Emerald", "h": 152, "s": 75, "t": 18}, {"n": "Jade", "h": 160, "s": 65, "t": 18}, {"n": "Mint", "h": 165, "s": 60, "t": 16}, {"n": "Aqua", "h": 180, "s": 75, "t": 20}, {"n": "Cyan", "h": 188, "s": 85, "t": 20}, {"n": "Sky", "h": 195, "s": 85, "t": 20}, {"n": "Azure", "h": 207, "s": 85, "t": 20}, {"n": "Royal", "h": 230, "s": 70, "t": 20}, {"n": "Periwinkle", "h": 235, "s": 55, "t": 16}, {"n": "Lavender", "h": 255, "s": 50, "t": 14}, {"n": "Plum", "h": 290, "s": 40, "t": 14}, {"n": "Mauve", "h": 310, "s": 30, "t": 12}, {"n": "Blush", "h": 340, "s": 45, "t": 12}, {"n": "Terracotta", "h": 15, "s": 50, "t": 12}, {"n": "Copper", "h": 22, "s": 65, "t": 12}, {"n": "Sand", "h": 38, "s": 40, "t": 10}, {"n": "Olive", "h": 70, "s": 40, "t": 10}, {"n": "Sage", "h": 120, "s": 22, "t": 8}, {"n": "Moss", "h": 95, "s": 35, "t": 10}, {"n": "Steel", "h": 210, "s": 30, "t": 10}, {"n": "Slate", "h": 215, "s": 16, "t": 8}, {"n": "Graphite", "h": 220, "s": 6, "t": 4}, {"n": "Mono", "h": 0, "s": 0, "t": 0}];
+
+function hslRgb(h, s, l) {
+  s /= 100; l /= 100;
+  var k = function (n) { return (n + h / 30) % 12; };
+  var a = s * Math.min(l, 1 - l);
+  var f = function (n) { return l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))); };
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}
+function rgbHex(c) { return '#' + c.map(function (v) { return ('0' + v.toString(16)).slice(-2); }).join('').toUpperCase(); }
+function hx(h, s, l) { return rgbHex(hslRgb(h, s, l)); }
+function hexRgb(x) { return [parseInt(x.slice(1, 3), 16), parseInt(x.slice(3, 5), 16), parseInt(x.slice(5, 7), 16)]; }
+function lum(c) {
+  var v = c.map(function (u) { u /= 255; return u <= 0.03928 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4); });
+  return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+}
+function contrast(a, b) {
+  var x = lum(hexRgb(a)), y = lum(hexRgb(b));
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+function rgba(x, al) { var c = hexRgb(x); return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + al + ')'; }
+
+var ORIGINAL_DARK = {
+  bg: '#070B0B', sidebar: '#0A1010', card: '#0E1515', card2: '#121B1B', input: '#0A1111',
+  border: '#1C2929', border2: '#253535', track: '#172424',
+  fg: '#E6F0EF', fg2: '#C9D8D6', muted: '#8FA3A1', muted2: '#A7B8B6',
+  accent: '#14B8A6', accentFg: '#042F2E', accentText: '#5EEAD4', series2: '#A5B4FC'
+};
+
+function buildTheme(t, dark) {
+  var h = t.h, as = t.s, ts = t.t, p;
+  if (dark && t.n === 'Midnight Teal') {
+    p = Object.assign({}, ORIGINAL_DARK);
+  } else if (dark) {
+    p = {
+      bg: hx(h, ts, 4), sidebar: hx(h, ts, 5.5), card: hx(h, ts, 7.5), card2: hx(h, ts, 10), input: hx(h, ts, 5),
+      border: hx(h, ts, 14), border2: hx(h, ts, 19), track: hx(h, ts, 12),
+      fg: hx(h, Math.min(ts, 15), 93), fg2: hx(h, Math.min(ts, 12), 83), muted: hx(h, Math.min(ts, 10), 63), muted2: hx(h, Math.min(ts, 10), 71),
+      accent: as === 0 ? hx(0, 0, 90) : hx(h, as, 50),
+      series2: hx((h + 170) % 360, 70, 74)
+    };
+    var L = 66;
+    while (L < 92 && contrast(hx(h, as, L), p.card) < 6) L += 2;
+    p.accentText = as === 0 ? hx(0, 0, 88) : hx(h, as, L);
+  } else {
+    var tl = Math.min(ts + 10, 30);
+    p = {
+      bg: hx(h, tl, 97), sidebar: hx(h, tl, 99), card: '#FFFFFF', card2: hx(h, tl, 95.5), input: '#FFFFFF',
+      border: hx(h, ts, 88), border2: hx(h, ts, 81), track: hx(h, tl, 92),
+      fg: hx(h, Math.min(ts + 5, 25), 10), fg2: hx(h, Math.min(ts, 15), 22), muted: hx(h, Math.min(ts, 8), 38), muted2: hx(h, Math.min(ts, 8), 33),
+      accent: as === 0 ? hx(0, 0, 12) : hx(h, as, 44),
+      series2: hx((h + 170) % 360, 65, 52)
+    };
+    var L2 = 38;
+    while (L2 > 10 && contrast(hx(h, as, L2), '#FFFFFF') < 4.8) L2 -= 2;
+    p.accentText = as === 0 ? hx(0, 0, 15) : hx(h, as, L2);
+  }
+  if (!p.accentFg) {
+    var darkInk = as === 0 ? '#0A0A0A' : hx(h, 60, 9);
+    p.accentFg = contrast(darkInk, p.accent) >= contrast('#FFFFFF', p.accent) ? darkInk : '#FFFFFF';
+  }
+  p.accentSoft = rgba(p.accent, dark ? 0.14 : 0.12);
+  p.accentBorder = rgba(p.accent, 0.45);
+  if (dark) {
+    Object.assign(p, {
+      ok: '#2DD4BF', okBg: 'rgba(45,212,191,0.14)', warn: '#FBBF24', warnBg: 'rgba(245,158,11,0.14)',
+      bad: '#FCA5A5', badBg: 'rgba(248,113,113,0.13)', info: '#93C5FD', infoBg: 'rgba(96,165,250,0.14)',
+      neutralBg: 'rgba(148,163,184,0.12)', hot: '#F59E0B', overlay: 'rgba(0,0,0,0.6)'
+    });
+  } else {
+    Object.assign(p, {
+      ok: '#047857', okBg: 'rgba(5,150,105,0.12)', warn: '#B45309', warnBg: 'rgba(217,119,6,0.13)',
+      bad: '#B91C1C', badBg: 'rgba(220,38,38,0.10)', info: '#1D4ED8', infoBg: 'rgba(37,99,235,0.10)',
+      neutralBg: 'rgba(100,116,139,0.12)', hot: '#D97706', overlay: 'rgba(15,23,42,0.35)'
+    });
+  }
+  return p;
+}
+
+function themeVars(p, dark) {
+  return Object.keys(p).map(function (k) { return '--' + k + ':' + p[k]; }).join(';') +
+    ';color-scheme:' + (dark ? 'dark' : 'light');
+}
+
+function themeIndex(name) {
+  for (var i = 0; i < THEMES.length; i++) if (THEMES[i].n === name) return i;
+  return 0;
+}
+
+var SUN = 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42';
+var MOON = 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z';
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.timers = [];
+    this.state = {
+      page: 'overview',
+      themeName: THEMES[themeIndex(props.theme || 'Midnight Teal')].n,
+      dark: props.dark !== false,
+      themeOpen: false,
+      query: '',
+      notifOpen: false,
+      unread: 3,
+      logsFor: null,
+      sonarPick: 0,
+      loadedModel: 'gpt-oss:20b',
+      draft: '',
+      thinking: false,
+      saved: false,
+      toggles: { notify: true, confirm: true, autoRefresh: true },
+      cpuSeries: [22, 25, 31, 28, 35, 41, 38, 44, 52, 47, 43, 39, 36],
+      memSeries: [48, 49, 51, 52, 55, 58, 57, 60, 62, 61, 60, 59, 58],
+      services: [
+        { id: 'jenkins', name: 'Jenkins', desc: 'CI/CD automation server', icon: ICONS.jenkins, port: 8080, url: 'http://localhost:8080', status: 'healthy', cpu: 18, mem: 42, memLabel: '1.3 GB', uptime: '3d 4h', folder: 'jenkins/', image: 'custom-jenkins:lts-jdk21', health: 'GET /login', note: '' },
+        { id: 'sonarqube', name: 'SonarQube', desc: 'Code quality and security analysis', icon: ICONS.sonar, port: 9000, url: 'http://localhost:9000', status: 'unhealthy', cpu: 61, mem: 74, memLabel: '2.4 GB', uptime: '6h 12m', folder: 'sonarqube/', image: 'sonarqube:community', health: 'GET /api/system/status', note: 'Health check slow (4.8 s). Elasticsearch disk watermark at 90%.' },
+        { id: 'openwebui', name: 'Open WebUI', desc: 'Chat UI for your local Ollama models', icon: ICONS.webui, port: 3000, url: 'http://localhost:3000', status: 'stopped', cpu: 0, mem: 0, memLabel: '0 MB', uptime: '—', folder: 'open-webui/', image: 'ghcr.io/open-webui/open-webui:main', health: 'GET /health', note: '' }
+      ],
+      activity: [
+        { kind: 'fail', text: 'Build #142 dashboard-api failed in tests', time: '12 min ago' },
+        { kind: 'warn', text: 'SonarQube health check slow (4.8 s)', time: '26 min ago' },
+        { kind: 'stop', text: 'Open WebUI stopped', time: '1 h ago' },
+        { kind: 'build', text: 'Build #141 dashboard-web passed', time: '1 h ago' },
+        { kind: 'start', text: 'Jenkins started', time: '3 d ago' }
+      ],
+      builds: [
+        { num: 142, job: 'dashboard-api', branch: 'main', status: 'failed', duration: '3m 12s', when: '12 min ago' },
+        { num: 141, job: 'dashboard-web', branch: 'main', status: 'success', duration: '4m 47s', when: '1 h ago' },
+        { num: 140, job: 'synode-api', branch: 'develop', status: 'success', duration: '6m 03s', when: '3 h ago' },
+        { num: 139, job: 'jobtrigger-flutter', branch: 'feature/ci', status: 'unstable', duration: '8m 21s', when: '5 h ago' },
+        { num: 138, job: 'dashboard-api', branch: 'main', status: 'success', duration: '2m 58s', when: 'Yesterday' },
+        { num: 137, job: 'coverpress', branch: 'main', status: 'aborted', duration: '0m 41s', when: 'Yesterday' }
+      ],
+      sonarProjects: [
+        { name: 'dashboard-api', gate: 'Passed', bugs: 3, vulns: 0, hotspots: 2, smells: 47, coverage: 71.4, dup: 2.1, rel: 'B', sec: 'A', maint: 'A', loc: '4.2k', analysed: '14 min ago' },
+        { name: 'synode-web', gate: 'Failed', bugs: 12, vulns: 2, hotspots: 9, smells: 138, coverage: 48.2, dup: 6.8, rel: 'C', sec: 'D', maint: 'B', loc: '18.7k', analysed: '2 h ago' },
+        { name: 'jobtrigger-flutter', gate: 'Passed', bugs: 1, vulns: 0, hotspots: 0, smells: 22, coverage: 82.0, dup: 0.9, rel: 'A', sec: 'A', maint: 'A', loc: '9.3k', analysed: '5 h ago' }
+      ],
+      logs: {
+        jenkins: [
+          { t: '13:02:11', lvl: 'INFO', msg: 'Jenkins is fully up and running' },
+          { t: '13:41:05', lvl: 'INFO', msg: 'Started by GitHub push by sithum — dashboard-api #142' },
+          { t: '13:42:37', lvl: 'INFO', msg: '[Pipeline] stage: Test — pnpm --filter api test' },
+          { t: '13:43:51', lvl: 'ERROR', msg: 'FAIL services.health.test.ts › open-webui reports healthy' },
+          { t: '13:43:51', lvl: 'ERROR', msg: 'Expected "healthy", received "stopped"' },
+          { t: '13:44:17', lvl: 'WARN', msg: 'Tests: 1 failed, 37 passed, 38 total' },
+          { t: '13:44:17', lvl: 'INFO', msg: 'Finished: FAILURE' }
+        ],
+        sonarqube: [
+          { t: '07:01:40', lvl: 'INFO', msg: 'Process[es] is up' },
+          { t: '07:02:12', lvl: 'INFO', msg: 'Process[web] is up' },
+          { t: '07:02:30', lvl: 'INFO', msg: 'Compute Engine is operational' },
+          { t: '13:20:03', lvl: 'WARN', msg: 'high disk watermark [90%] exceeded on node, shards will be relocated' },
+          { t: '13:27:48', lvl: 'WARN', msg: 'Health check /api/system/status took 4812 ms' },
+          { t: '13:28:02', lvl: 'INFO', msg: 'Analysis report processed for dashboard-api' }
+        ],
+        openwebui: [
+          { t: '11:58:20', lvl: 'INFO', msg: 'Connected to Ollama at http://host.docker.internal:11434' },
+          { t: '11:58:21', lvl: 'INFO', msg: 'Uvicorn running on http://0.0.0.0:8080' },
+          { t: '12:04:45', lvl: 'INFO', msg: 'Shutting down' },
+          { t: '12:04:46', lvl: 'INFO', msg: 'Container open-webui exited with code 0' }
+        ]
+      },
+      messages: [
+        { role: 'assistant', text: 'Hi Sithum. I can see Jenkins, SonarQube and Open WebUI. Ask me why a build failed, which container is using the most memory, or what SonarQube is complaining about.' }
+      ]
+    };
+  }
+
+  componentDidUpdate(prev) {
+    if (prev.theme !== this.props.theme && this.props.theme) this.setState({ themeName: THEMES[themeIndex(this.props.theme)].n });
+    if (prev.dark !== this.props.dark && typeof this.props.dark === 'boolean') this.setState({ dark: this.props.dark });
+  }
+
+  stepTheme(d) {
+    var i = themeIndex(this.state.themeName);
+    this.setState({ themeName: THEMES[(i + d + THEMES.length) % THEMES.length].n });
+  }
+
+  componentDidMount() {
+    var self = this;
+    this.tick = setInterval(function () { self.pulse(); }, 4000);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.tick);
+    this.timers.forEach(clearTimeout);
+  }
+
+  later(fn, ms) { this.timers.push(setTimeout(fn, ms)); }
+
+  pulse() {
+    this.setState(function (s) {
+      var services = s.services.map(function (x) {
+        if (x.status !== 'healthy' && x.status !== 'unhealthy') return x;
+        return Object.assign({}, x, {
+          cpu: Math.round(clamp(x.cpu + (Math.random() * 10 - 5), 3, 92)),
+          mem: Math.round(clamp(x.mem + (Math.random() * 4 - 2), 10, 90))
+        });
+      });
+      var running = services.filter(function (x) { return x.status === 'healthy' || x.status === 'unhealthy'; });
+      var cpu = running.reduce(function (a, x) { return a + x.cpu; }, 0) / 3 + 8;
+      var mem = running.reduce(function (a, x) { return a + x.mem; }, 0) / 3 + 12;
+      return {
+        services: services,
+        cpuSeries: s.cpuSeries.slice(1).concat([Math.round(clamp(cpu, 2, 98))]),
+        memSeries: s.memSeries.slice(1).concat([Math.round(clamp(mem, 2, 98))])
+      };
+    });
+  }
+
+  addActivity(list, kind, text) {
+    return [{ kind: kind, text: text, time: 'Just now' }].concat(list).slice(0, 8);
+  }
+
+  act(id, action) {
+    var self = this;
+    var mid = { start: 'starting', stop: 'stopping', restart: 'restarting' }[action];
+    this.setState(function (s) {
+      return { services: s.services.map(function (x) { return x.id === id ? Object.assign({}, x, { status: mid }) : x; }) };
+    });
+    this.later(function () {
+      self.setState(function (s) {
+        var svc = s.services.find(function (x) { return x.id === id; });
+        var done = action === 'stop'
+          ? { status: 'stopped', cpu: 0, mem: 0, memLabel: '0 MB', uptime: '—', note: '' }
+          : { status: 'healthy', cpu: BASE[id].cpu, mem: BASE[id].mem, memLabel: BASE[id].memLabel, uptime: 'Just now', note: '' };
+        var verb = { start: 'started', stop: 'stopped', restart: 'restarted' }[action];
+        var line = action === 'stop'
+          ? { t: nowTime(), lvl: 'INFO', msg: 'Container ' + id + ' stopped (docker compose stop)' }
+          : { t: nowTime(), lvl: 'INFO', msg: 'Container ' + id + ' ' + verb + ', health check passed' };
+        var logs = Object.assign({}, s.logs);
+        logs[id] = s.logs[id].concat([line]);
+        return {
+          services: s.services.map(function (x) { return x.id === id ? Object.assign({}, x, done) : x; }),
+          activity: self.addActivity(s.activity, action === 'stop' ? 'stop' : 'start', svc.name + ' ' + verb),
+          unread: s.unread + 1,
+          logs: logs
+        };
+      });
+    }, 1300 + Math.round(Math.random() * 700));
+  }
+
+  rebuild(job, branch) {
+    var self = this;
+    var num;
+    this.setState(function (s) {
+      num = s.builds[0].num + 1;
+      return { builds: [{ num: num, job: job, branch: branch, status: 'running', duration: '—', when: 'Running…' }].concat(s.builds).slice(0, 8) };
+    });
+    this.later(function () {
+      self.setState(function (s) {
+        var webuiUp = s.services.find(function (x) { return x.id === 'openwebui'; }).status === 'healthy';
+        var ok = job !== 'dashboard-api' || webuiUp;
+        var b = s.builds.map(function (x) {
+          return x.status === 'running' && x.job === job ? Object.assign({}, x, { status: ok ? 'success' : 'failed', duration: ok ? '3m 05s' : '3m 09s', when: 'Just now' }) : x;
+        });
+        var top = b.find(function (x) { return x.job === job && x.when === 'Just now'; }) || b[0];
+        return {
+          builds: b,
+          activity: self.addActivity(s.activity, ok ? 'build' : 'fail', 'Build #' + top.num + ' ' + job + (ok ? ' passed' : ' failed in tests')),
+          unread: s.unread + 1
+        };
+      });
+    }, 2600);
+  }
+
+  answer(q) {
+    var s = this.state;
+    var t = q.toLowerCase();
+    var webui = s.services.find(function (x) { return x.id === 'openwebui'; });
+    var sonarSvc = s.services.find(function (x) { return x.id === 'sonarqube'; });
+    if (/build|fail|jenkins|pipeline/.test(t)) {
+      var last = s.builds[0];
+      if (last.status === 'failed') {
+        return 'Build #' + last.num + ' (' + last.job + ', ' + last.branch + ') failed in the Test stage. 1 of 38 tests failed: services.health.test.ts expected Open WebUI to be "healthy" but got "' + webui.status + '". That test calls the live container, and Open WebUI was down when the build ran. Start Open WebUI and rebuild, or mock the health check in that test so builds don’t depend on it.';
+      }
+      return 'Your last build, #' + last.num + ' (' + last.job + '), is ' + STATUS[last.status].label.toLowerCase().replace('…', '') + '. Nothing failing right now.';
+    }
+    if (/sonar|quality|gate|smell|coverage/.test(t)) {
+      if (sonarSvc.status === 'unhealthy') {
+        return 'SonarQube is up but unhealthy: its health check took 4.8 s and Elasticsearch hit the 90% disk watermark. Free some Docker disk space (docker system df shows usage) and restart the service. Separately, synode-web is failing its quality gate: 2 vulnerabilities, security rating D and 48.2% coverage.';
+      }
+      return 'SonarQube is ' + STATUS[sonarSvc.status].label.toLowerCase() + '. dashboard-api passes its quality gate with 71.4% coverage; synode-web fails it on 2 vulnerabilities and 48.2% coverage.';
+    }
+    if (/memory|cpu|resource|most|heavy/.test(t)) {
+      var top = s.services.slice().sort(function (a, b) { return b.mem - a.mem; })[0];
+      if (top.mem === 0) return 'Nothing is running right now, so no container is using memory.';
+      return top.name + ' is using the most memory: ' + top.mem + '% of its limit (' + top.memLabel + ') at ' + top.cpu + '% CPU. ' + (top.id === 'sonarqube' ? 'That is normal for SonarQube’s embedded Elasticsearch, but the disk watermark warning is worth fixing.' : 'That looks normal.');
+    }
+    if (/open ?webui|ollama|model/.test(t)) {
+      return 'Open WebUI is ' + STATUS[webui.status].label.toLowerCase() + '. Ollama is reachable at 127.0.0.1:11434 and ' + (s.loadedModel ? s.loadedModel + ' is loaded.' : 'no model is loaded.');
+    }
+    return 'I can check service health, explain Jenkins builds, summarise SonarQube issues and read container logs. Try one of the suggestions below.';
+  }
+
+  send(text) {
+    var self = this;
+    var q = (text || '').trim();
+    if (!q || this.state.thinking) return;
+    this.setState(function (s) {
+      return { messages: s.messages.concat([{ role: 'user', text: q }]), draft: '', thinking: true };
+    });
+    this.later(function () {
+      var reply = self.answer(q);
+      self.setState(function (s) {
+        return { messages: s.messages.concat([{ role: 'assistant', text: reply }]), thinking: false };
+      });
+    }, 900);
+  }
+
+  renderVals() {
+    var self = this;
+    var s = this.state;
+    var page = PAGES.find(function (p) { return p.id === s.page; }) || PAGES[0];
+
+    var unhealthyCount = s.services.filter(function (x) { return x.status === 'unhealthy' || x.status === 'stopped'; }).length;
+    var navItems = PAGES.map(function (p) {
+      var active = p.id === s.page;
+      return {
+        label: p.label,
+        icon: ICONS[p.id],
+        current: active ? 'page' : 'false',
+        hasBadge: p.id === 'services' && unhealthyCount > 0,
+        badge: unhealthyCount,
+        go: function () { self.setState({ page: p.id, notifOpen: false, themeOpen: false }); },
+        style: 'display:flex;align-items:center;gap:12px;width:100%;min-height:42px;padding:0 12px;border:0;border-radius:9px;font-size:14px;font-weight:' + (active ? '600' : '500') + ';cursor:pointer;' + (active ? 'background:var(--accentSoft);color:var(--accentText);' : 'background:transparent;color:var(--muted2);')
+      };
+    });
+
+    var q = s.query.trim().toLowerCase();
+    var filtered = s.services.filter(function (x) { return !q || x.name.toLowerCase().indexOf(q) >= 0 || x.desc.toLowerCase().indexOf(q) >= 0; });
+    var serviceCards = filtered.map(function (x) {
+      var b = badge(x.status);
+      var busy = /ing$/.test(x.status);
+      var running = x.status === 'healthy' || x.status === 'unhealthy';
+      var startDisabled = busy || running;
+      var stopDisabled = busy || x.status === 'stopped';
+      var cpuColor = x.cpu >= 70 ? 'var(--hot)' : 'var(--accent)';
+      var memColor = x.mem >= 70 ? 'var(--hot)' : 'var(--series2)';
+      return Object.assign({}, x, b, {
+        cpuText: x.cpu + '%',
+        memText: x.mem + '%',
+        cpuBar: 'height:100%;width:' + x.cpu + '%;background:' + cpuColor + ';border-radius:999px;transition:width .6s',
+        memBar: 'height:100%;width:' + x.mem + '%;background:' + memColor + ';border-radius:999px;transition:width .6s',
+        hasNote: !!x.note && x.status === 'unhealthy',
+        startDisabled: startDisabled,
+        stopDisabled: stopDisabled,
+        restartDisabled: stopDisabled,
+        startStyle: btnStyle('primary', startDisabled),
+        stopStyle: btnStyle('ghost', stopDisabled),
+        restartStyle: btnStyle('ghost', stopDisabled),
+        openLabel: 'Open ' + x.name + ' in a new tab',
+        start: function () { self.act(x.id, 'start'); },
+        stop: function () { self.act(x.id, 'stop'); },
+        restart: function () { self.act(x.id, 'restart'); },
+        viewLogs: function () { self.setState({ logsFor: x.id }); }
+      });
+    });
+
+    var runningCount = s.services.filter(function (x) { return x.status === 'healthy' || x.status === 'unhealthy'; }).length;
+    var healthyCount = s.services.filter(function (x) { return x.status === 'healthy'; }).length;
+    var lastBuild = s.builds[0];
+    var gateProj = s.sonarProjects[0];
+    var lbMeta = STATUS[lastBuild.status];
+    var stats = [
+      { label: 'Services running', value: String(runningCount), suffix: '/ ' + s.services.length, note: runningCount === s.services.length ? 'All containers up' : (s.services.length - runningCount) + ' stopped', valueStyle: 'font-size:30px;font-weight:700;letter-spacing:-0.02em;color:var(--fg)' },
+      { label: 'Healthy', value: String(healthyCount), suffix: '/ ' + s.services.length, note: healthyCount === s.services.length ? 'Every health check passing' : (s.services.length - healthyCount) + ' need attention', valueStyle: 'font-size:30px;font-weight:700;letter-spacing:-0.02em;color:' + (healthyCount === s.services.length ? 'var(--ok)' : 'var(--warn)') },
+      { label: 'Last build', value: lbMeta.label.replace('…', ''), suffix: '#' + lastBuild.num, note: lastBuild.job + ' · ' + lastBuild.when, valueStyle: 'font-size:26px;font-weight:700;letter-spacing:-0.02em;color:' + lbMeta.fg },
+      { label: 'Quality gate', value: gateProj.gate, suffix: gateProj.name, note: gateProj.coverage + '% coverage · ' + gateProj.bugs + ' bugs', valueStyle: 'font-size:26px;font-weight:700;letter-spacing:-0.02em;color:' + (gateProj.gate === 'Passed' ? 'var(--ok)' : 'var(--bad)') }
+    ];
+
+    var cpuLine = pts(s.cpuSeries);
+    var activityItems = s.activity.slice(0, 6).map(function (a) {
+      return { text: a.text, time: a.time, dot: 'width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px;background:' + ACT_COLORS[a.kind] + ';box-shadow:0 0 0 3px var(--card)' };
+    });
+    var notifItems = s.activity.slice(0, 4).map(function (a) {
+      return { text: a.text, time: a.time, dot: 'width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:6px;background:' + ACT_COLORS[a.kind] };
+    });
+
+    var done = s.builds.filter(function (b) { return b.status !== 'running'; });
+    var okCount = done.filter(function (b) { return b.status === 'success'; }).length;
+    var buildStats = [
+      { label: 'Success rate (last ' + done.length + ')', value: Math.round(okCount / Math.max(done.length, 1) * 100) + '%' },
+      { label: 'Average duration', value: '4m 18s' },
+      { label: 'Running now', value: String(s.builds.filter(function (b) { return b.status === 'running'; }).length) },
+      { label: 'Failed today', value: String(s.builds.filter(function (b) { return b.status === 'failed'; }).length) }
+    ];
+    var buildRows = s.builds.map(function (r) {
+      var busy = r.status === 'running';
+      return Object.assign({}, r, badge(r.status), {
+        busy: busy,
+        rebuildLabel: 'Rebuild ' + r.job,
+        btnStyle: btnStyle('ghost', busy) + 'margin-left:auto;',
+        rebuild: function () { self.rebuild(r.job, r.branch); }
+      });
+    });
+
+    var sp = s.sonarProjects[s.sonarPick];
+    var gradeStyle = function (g) { return 'width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#061010;background:' + GRADE_COLORS[g]; };
+    var sonar = {
+      name: sp.name,
+      gate: sp.gate,
+      gateStyle: 'font-size:28px;font-weight:700;letter-spacing:-0.02em;color:' + (sp.gate === 'Passed' ? 'var(--ok)' : 'var(--bad)'),
+      analysed: sp.analysed,
+      loc: sp.loc,
+      dup: sp.dup,
+      coverage: sp.coverage.toFixed(1),
+      covBar: 'height:100%;width:' + sp.coverage + '%;background:' + (sp.coverage >= 80 ? 'var(--accent)' : sp.coverage >= 60 ? 'var(--accentText)' : 'var(--hot)') + ';border-radius:999px',
+      ratings: [
+        { grade: sp.rel, label: 'Reliability', style: gradeStyle(sp.rel) },
+        { grade: sp.sec, label: 'Security', style: gradeStyle(sp.sec) },
+        { grade: sp.maint, label: 'Maintainability', style: gradeStyle(sp.maint) }
+      ],
+      metrics: [
+        { label: 'Bugs', value: String(sp.bugs), note: sp.bugs === 0 ? 'Clean' : 'Open issues', style: 'font-size:28px;font-weight:700;color:' + (sp.bugs > 5 ? 'var(--bad)' : 'var(--fg)') },
+        { label: 'Vulnerabilities', value: String(sp.vulns), note: sp.vulns === 0 ? 'None found' : 'Fix before release', style: 'font-size:28px;font-weight:700;color:' + (sp.vulns > 0 ? 'var(--bad)' : 'var(--ok)') },
+        { label: 'Security hotspots', value: String(sp.hotspots), note: 'To review', style: 'font-size:28px;font-weight:700;color:' + (sp.hotspots > 0 ? 'var(--warn)' : 'var(--ok)') },
+        { label: 'Code smells', value: String(sp.smells), note: 'Maintainability debt', style: 'font-size:28px;font-weight:700;color:var(--fg)' }
+      ]
+    };
+    var sonarTabs = s.sonarProjects.map(function (p, i) {
+      var active = i === s.sonarPick;
+      return {
+        name: p.name,
+        active: active ? 'true' : 'false',
+        pick: function () { self.setState({ sonarPick: i }); },
+        style: 'height:38px;padding:0 14px;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;' + (active ? 'border:1px solid var(--accent);background:var(--accentSoft);color:var(--accentText)' : 'border:1px solid var(--border2);background:var(--card2);color:var(--fg2)')
+      };
+    });
+
+    var modelData = [
+      { name: 'gpt-oss:20b', size: '13 GB', use: 'Assistant · Claude Code (dashboard project)' },
+      { name: 'qwen2.5-coder:14b', size: '9.0 GB', use: 'Coding fallback' },
+      { name: 'qwen2.5:14b', size: '9.0 GB', use: 'General chat in Open WebUI' },
+      { name: 'deepseek-r1:14b', size: '9.0 GB', use: 'Reasoning experiments' },
+      { name: 'qwen2.5-coder:3b', size: '1.9 GB', use: 'Background tasks' }
+    ];
+    var models = modelData.map(function (m) {
+      var loaded = s.loadedModel === m.name;
+      return Object.assign({}, m, {
+        btnLabel: loaded ? 'Unload' : 'Load',
+        btnStyle: btnStyle(loaded ? 'ghost' : 'primary', false),
+        toggle: function () { self.setState({ loadedModel: loaded ? null : m.name }); }
+      });
+    });
+
+    var chat = s.messages.map(function (m) {
+      var mine = m.role === 'user';
+      return {
+        text: m.text,
+        rowStyle: 'display:flex;justify-content:' + (mine ? 'flex-end' : 'flex-start'),
+        bubbleStyle: 'max-width:min(640px,85%);padding:12px 16px;border-radius:14px;font-size:14px;line-height:1.55;' + (mine ? 'background:var(--accent);color:var(--accentFg);border-bottom-right-radius:4px;font-weight:500' : 'background:var(--card2);color:var(--fg);border:1px solid var(--border2);border-bottom-left-radius:4px')
+      };
+    });
+    var suggestions = ['Why did my last build fail?', 'Is SonarQube healthy?', 'Which container uses the most memory?'].map(function (t) {
+      return { text: t, ask: function () { self.send(t); } };
+    });
+
+    var toggleDefs = [
+      { key: 'notify', label: 'Desktop notifications', hint: 'Alert me when a service goes down or a build fails.' },
+      { key: 'confirm', label: 'Confirm before Stop All', hint: 'Ask before stopping every container at once.' },
+      { key: 'autoRefresh', label: 'Auto-refresh', hint: 'Keep health checks and charts live.' }
+    ];
+    var toggles = toggleDefs.map(function (d) {
+      var on = !!s.toggles[d.key];
+      return {
+        label: d.label, hint: d.hint, on: on ? 'true' : 'false',
+        flip: function () { var t = Object.assign({}, self.state.toggles); t[d.key] = !on; self.setState({ toggles: t, saved: false }); },
+        track: 'position:relative;flex-shrink:0;width:48px;height:28px;border-radius:999px;border:0;cursor:pointer;transition:background .2s;background:' + (on ? 'var(--accent)' : 'var(--border2)'),
+        knob: 'position:absolute;top:4px;left:' + (on ? '24px' : '4px') + ';width:20px;height:20px;border-radius:50%;background:' + (on ? 'var(--accentFg)' : 'var(--fg2)') + ';transition:left .2s'
+      };
+    });
+
+    var logSvc = s.logsFor ? s.services.find(function (x) { return x.id === s.logsFor; }) : null;
+    var lvlColor = { INFO: '#5EEAD4', WARN: '#FBBF24', ERROR: '#F87171' };
+    var logLines = logSvc ? s.logs[logSvc.id].map(function (l) {
+      return Object.assign({}, l, { lvlStyle: 'flex-shrink:0;width:44px;font-weight:500;color:' + lvlColor[l.lvl] });
+    }) : [];
+
+    var ti = themeIndex(s.themeName);
+    var tp = buildTheme(THEMES[ti], s.dark);
+    var segStyle = function (on) {
+      return 'display:inline-flex;align-items:center;justify-content:center;gap:8px;height:38px;border-radius:7px;border:0;font-size:13px;font-weight:600;cursor:pointer;' +
+        (on ? 'background:var(--accent);color:var(--accentFg)' : 'background:transparent;color:var(--fg2)');
+    };
+    var themeChips = THEMES.map(function (t, i) {
+      var c = buildTheme(t, s.dark);
+      var active = i === ti;
+      return {
+        name: t.n,
+        active: active ? 'true' : 'false',
+        pick: function () { self.setState({ themeName: t.n }); },
+        style: 'aspect-ratio:1;width:100%;min-height:30px;border-radius:8px;cursor:pointer;padding:0;' +
+          'background:linear-gradient(135deg,' + c.bg + ' 0 50%,' + c.accent + ' 50% 100%);' +
+          (active ? 'border:2px solid var(--fg);box-shadow:0 0 0 2px var(--card)' : 'border:1px solid var(--border2)')
+      };
+    });
+
+    return {
+      rootStyle: themeVars(tp, s.dark) + ';min-height:100vh;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,sans-serif;font-size:14px;position:relative;transition:background .25s,color .25s',
+      themeName: THEMES[ti].n,
+      themeNumber: ti + 1,
+      themeCount: THEMES.length,
+      themeOpen: s.themeOpen,
+      themeOpenAttr: s.themeOpen ? 'true' : 'false',
+      themeButtonLabel: 'Theme: ' + THEMES[ti].n + '. Change theme',
+      themeSwatch: 'width:18px;height:18px;border-radius:50%;flex-shrink:0;border:1px solid var(--border2);background:linear-gradient(135deg,' + tp.bg + ' 0 50%,' + tp.accent + ' 50% 100%)',
+      themeChips: themeChips,
+      toggleThemes: function () { self.setState({ themeOpen: !s.themeOpen, notifOpen: false }); },
+      prevTheme: function () { self.stepTheme(-1); },
+      nextTheme: function () { self.stepTheme(1); },
+      setLight: function () { self.setState({ dark: false }); },
+      setDark: function () { self.setState({ dark: true }); },
+      lightPressed: s.dark ? 'false' : 'true',
+      darkPressed: s.dark ? 'true' : 'false',
+      lightSegStyle: segStyle(!s.dark),
+      darkSegStyle: segStyle(s.dark),
+      toggleMode: function () { self.setState({ dark: !s.dark }); },
+      modeLabel: s.dark ? 'Switch to light mode' : 'Switch to dark mode',
+      modeIcon: s.dark ? SUN : MOON,
+      navItems: navItems,
+      pageTitle: page.title,
+      pageSub: page.sub,
+      isOverview: s.page === 'overview',
+      isServices: s.page === 'services',
+      showGrid: s.page === 'overview' || s.page === 'services',
+      isJenkins: s.page === 'jenkins',
+      isSonar: s.page === 'sonar',
+      isOllama: s.page === 'ollama',
+      isAssistant: s.page === 'assistant',
+      isSettings: s.page === 'settings',
+      query: s.query,
+      onQuery: function (e) { self.setState({ query: e.target.value }); },
+      noResults: filtered.length === 0,
+      serviceCountLabel: filtered.length + ' of ' + s.services.length + ' shown',
+      startAll: function () { s.services.forEach(function (x) { if (x.status === 'stopped') self.act(x.id, 'start'); }); },
+      stopAll: function () { s.services.forEach(function (x) { if (x.status === 'healthy' || x.status === 'unhealthy') self.act(x.id, 'stop'); }); },
+      notifOpen: s.notifOpen,
+      toggleNotif: function () { self.setState({ notifOpen: !s.notifOpen, themeOpen: false, unread: 0 }); },
+      hasUnread: s.unread > 0,
+      unread: s.unread,
+      notifItems: notifItems,
+      stats: stats,
+      serviceCards: serviceCards,
+      cpuLine: cpuLine,
+      cpuArea: '0,160 ' + cpuLine + ' 600,160',
+      memLine: pts(s.memSeries),
+      cpuNow: s.cpuSeries[s.cpuSeries.length - 1],
+      memNow: s.memSeries[s.memSeries.length - 1],
+      activityItems: activityItems,
+      buildStats: buildStats,
+      buildRows: buildRows,
+      sonar: sonar,
+      sonarTabs: sonarTabs,
+      models: models,
+      loadedLabel: s.loadedModel || 'None',
+      assistantModel: s.loadedModel ? s.loadedModel + ' via Ollama' : 'No model loaded',
+      chat: chat,
+      thinking: s.thinking,
+      suggestions: suggestions,
+      draft: s.draft,
+      onDraft: function (e) { self.setState({ draft: e.target.value }); },
+      onSend: function (e) { if (e && e.preventDefault) e.preventDefault(); self.send(self.state.draft); },
+      clearChat: function () { self.setState({ messages: [{ role: 'assistant', text: 'New chat. What would you like to know about your stack?' }], thinking: false }); },
+      toggles: toggles,
+      saved: s.saved,
+      save: function () { self.setState({ saved: true }); },
+      logsOpen: !!logSvc,
+      logService: logSvc ? Object.assign({}, logSvc, badge(logSvc.status)) : { name: '', folder: '', badgeStyle: '', dotStyle: '', statusLabel: '' },
+      logLines: logLines,
+      closeLogs: function () { self.setState({ logsFor: null }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

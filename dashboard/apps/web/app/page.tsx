@@ -1,160 +1,117 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { type Action, type Service, type Status, fetchServices, runAction } from "./api";
-import { LogsDrawer } from "./LogsDrawer";
-import { Spinner } from "./Spinner";
+import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { PageHeader } from "@/components/PageHeader";
+import { ResourceChart } from "@/components/ResourceChart";
+import { ServiceCard } from "@/components/ServiceCard";
+import { StatCard } from "@/components/StatCard";
+import { useSearch } from "@/components/search-provider";
+import { LAST_BUILD, QUALITY_GATE, metricsFor } from "@/lib/mock";
+import { useServices } from "@/lib/use-services";
 
-const POLL_MS = 5000;
+const LAST_BUILD_LABEL =
+  LAST_BUILD.status.charAt(0).toUpperCase() + LAST_BUILD.status.slice(1);
+const LAST_BUILD_TONE =
+  LAST_BUILD.status === "success"
+    ? "text-ok"
+    : LAST_BUILD.status === "failed"
+      ? "text-bad"
+      : "text-warn";
 
-const BADGE: Record<Status, string> = {
-  healthy: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
-  unhealthy: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
-  stopped: "bg-neutral-500/15 text-neutral-300 ring-neutral-500/30",
-};
+export default function OverviewPage() {
+  const { data: services, isPending, error } = useServices();
+  const { query } = useSearch();
 
-const DOT: Record<Status, string> = {
-  healthy: "bg-emerald-400",
-  unhealthy: "bg-amber-400",
-  stopped: "bg-neutral-500",
-};
+  const list = services ?? [];
+  const normalized = query.trim().toLowerCase();
+  const filtered = normalized
+    ? list.filter((service) =>
+        `${service.name} ${metricsFor(service.id).description}`
+          .toLowerCase()
+          .includes(normalized),
+      )
+    : list;
 
-const ACTIONS: { action: Action; label: string }[] = [
-  { action: "start", label: "Start" },
-  { action: "stop", label: "Stop" },
-  { action: "restart", label: "Restart" },
-];
-
-// Start makes no sense on a healthy service; Stop and Restart make none on a stopped one.
-function disabledFor(action: Action, status: Status): boolean {
-  if (action === "start") return status === "healthy";
-  return status === "stopped";
-}
-
-const buttonClass =
-  "inline-flex items-center gap-1.5 rounded-md bg-neutral-800 px-3 py-1.5 text-sm font-medium text-neutral-100 transition hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-neutral-800";
-
-export default function Page() {
-  const [services, setServices] = useState<Service[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState<Record<string, Action>>({});
-  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
-  const [logsFor, setLogsFor] = useState<{ id: string; name: string } | null>(null);
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    try {
-      setServices(await fetchServices(signal));
-      setError(null);
-    } catch (err) {
-      if (signal?.aborted) return;
-      setError(err instanceof Error ? err.message : "Request failed");
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    load(controller.signal);
-    const timer = setInterval(() => load(controller.signal), POLL_MS);
-    return () => {
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, [load]);
-
-  async function run(id: string, action: Action) {
-    setPending((p) => ({ ...p, [id]: action }));
-    setActionErrors(({ [id]: _cleared, ...rest }) => rest);
-    try {
-      await runAction(id, action);
-    } catch (err) {
-      setActionErrors((e) => ({
-        ...e,
-        [id]: err instanceof Error ? err.message : "Action failed",
-      }));
-    } finally {
-      await load();
-      setPending(({ [id]: _done, ...rest }) => rest);
-    }
-  }
+  const total = list.length;
+  const running = list.filter(
+    (service) => service.status === "healthy" || service.status === "unhealthy",
+  ).length;
+  const healthy = list.filter((service) => service.status === "healthy").length;
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-12">
-      <h1 className="text-2xl font-semibold tracking-tight">DevOps Dashboard</h1>
-      <p className="mt-1 text-sm text-neutral-400">Refreshes every 5 seconds</p>
+    <>
+      <PageHeader title="Overview" sub="Everything running in your custom DevOps stack." />
 
-      {error && (
-        <div className="mt-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          Can&apos;t reach the API: {error}
+      {error ? (
+        <div className="rounded-[12px] border border-bad-bg bg-bad-bg px-4 py-3 text-sm text-bad">
+          Can&apos;t reach the API: {error.message}
         </div>
+      ) : isPending ? (
+        <p className="text-sm text-muted-foreground">Loading services…</p>
+      ) : (
+        <>
+          <section
+            aria-label="Summary"
+            className="grid grid-cols-[repeat(auto-fit,minmax(210px,1fr))] gap-4"
+          >
+            <StatCard
+              label="Services running"
+              value={String(running)}
+              suffix={`/ ${total}`}
+              note={running === total ? "All containers up" : `${total - running} stopped`}
+            />
+            <StatCard
+              label="Healthy"
+              value={String(healthy)}
+              suffix={`/ ${total}`}
+              note={
+                healthy === total ? "Every health check passing" : `${total - healthy} need attention`
+              }
+              tone={healthy === total ? "text-ok" : "text-warn"}
+            />
+            <StatCard
+              label="Last build"
+              value={LAST_BUILD_LABEL}
+              suffix={`#${LAST_BUILD.number}`}
+              note={`${LAST_BUILD.job} · ${LAST_BUILD.when}`}
+              tone={LAST_BUILD_TONE}
+            />
+            <StatCard
+              label="Quality gate"
+              value={QUALITY_GATE.gate}
+              suffix={QUALITY_GATE.project}
+              note={`${QUALITY_GATE.coverage}% coverage · ${QUALITY_GATE.bugs} bugs`}
+              tone={QUALITY_GATE.gate === "Passed" ? "text-ok" : "text-bad"}
+            />
+          </section>
+
+          <section aria-label="Services" className="flex flex-col gap-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="m-0 text-base font-semibold text-foreground">Services</h2>
+              <span className="text-xs text-muted-foreground">
+                {filtered.length} of {total} shown
+              </span>
+            </div>
+
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4">
+              {filtered.map((service) => (
+                <ServiceCard key={service.id} service={service} />
+              ))}
+            </div>
+
+            {filtered.length === 0 && (
+              <div className="rounded-[14px] border border-dashed border-border2 p-7 text-center text-muted-foreground">
+                No services match “{query}”.
+              </div>
+            )}
+          </section>
+
+          <div className="flex flex-wrap gap-4">
+            <ResourceChart />
+            <ActivityTimeline />
+          </div>
+        </>
       )}
-
-      {services === null && !error && <p className="mt-8 text-neutral-400">Loading…</p>}
-
-      {services && (
-        <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {services.map((service) => {
-            const busy = pending[service.id];
-            const failure = actionErrors[service.id];
-            return (
-              <li
-                key={service.id}
-                className="flex flex-col justify-between gap-5 rounded-xl border border-neutral-800 bg-neutral-900 p-5"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-lg font-medium">{service.name}</h2>
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${BADGE[service.status]}`}
-                  >
-                    <span className={`size-1.5 rounded-full ${DOT[service.status]}`} />
-                    {service.status}
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {ACTIONS.map(({ action, label }) => (
-                    <button
-                      key={action}
-                      type="button"
-                      onClick={() => run(service.id, action)}
-                      disabled={busy !== undefined || disabledFor(action, service.status)}
-                      className={buttonClass}
-                    >
-                      {busy === action && <Spinner />}
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                {failure && (
-                  <p className="max-h-24 overflow-auto rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-                    {failure}
-                  </p>
-                )}
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setLogsFor({ id: service.id, name: service.name })}
-                    className={buttonClass}
-                  >
-                    View Logs
-                  </button>
-                  <a
-                    href={service.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={buttonClass}
-                  >
-                    Open
-                  </a>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {logsFor && <LogsDrawer service={logsFor} onClose={() => setLogsFor(null)} />}
-    </main>
+    </>
   );
 }

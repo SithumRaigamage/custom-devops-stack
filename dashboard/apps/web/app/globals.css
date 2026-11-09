@@ -1,5 +1,214 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
+/* The mode attribute is written onto <html> by ThemeProvider. */
+@custom-variant dark (&:is([data-mode="dark"], [data-mode="dark"] *));
+
+/*
+ * Default values are Midnight Teal dark, exactly what buildTheme("Midnight Teal", true)
+ * returns. ThemeProvider overwrites all of them as inline variables on <html>, so these
+ * only matter for the first paint before the stored theme is applied.
+ */
 :root {
-  color-scheme: dark;
+  --bg: #070b0b;
+  --sidebar: #0a1010;
+  --card: #0e1515;
+  --card2: #121b1b;
+  --input: #0a1111;
+  --border: #1c2929;
+  --border2: #253535;
+  --track: #172424;
+  --fg: #e6f0ef;
+  --fg2: #c9d8d6;
+  --muted: #8fa3a1;
+  --muted2: #a7b8b6;
+  --accent: #14b8a6;
+  --accentFg: #042f2e;
+  --accentText: #5eead4;
+  --accentSoft: rgba(20, 184, 166, 0.14);
+  --accentBorder: rgba(20, 184, 166, 0.45);
+  --series2: #a5b4fc;
+
+  --ok: #2dd4bf;
+  --okBg: rgba(45, 212, 191, 0.14);
+  --warn: #fbbf24;
+  --warnBg: rgba(245, 158, 11, 0.14);
+  --bad: #fca5a5;
+  --badBg: rgba(248, 113, 113, 0.13);
+  --info: #93c5fd;
+  --infoBg: rgba(96, 165, 250, 0.14);
+  --neutralBg: rgba(148, 163, 184, 0.12);
+  --hot: #f59e0b;
+  --overlay: rgba(0, 0, 0, 0.6);
+
+  /* Fixed regardless of theme: the log viewer is always a dark terminal. */
+  --log-bg: #060a0a;
+  --log-time: #6f8583;
+  --log-fg: #d5e3e1;
+  --log-info: #5eead4;
+  --log-warn: #fbbf24;
+  --log-error: #f87171;
+
+  /* SonarQube grade tiles. */
+  --grade-fg: #061010;
+  --grade-a: #2dd4bf;
+  --grade-b: #a3e635;
+  --grade-c: #fbbf24;
+  --grade-d: #fb923c;
+  --grade-e: #f87171;
+
+  --radius: 14px;
+
+  /* Popover shadows from the design preview. */
+  --shadow-popover: 0 18px 50px rgba(0, 0, 0, 0.35);
+  --shadow-popover-strong: 0 18px 50px rgba(0, 0, 0, 0.55);
+
+  /*
+   * shadcn/ui semantics → design tokens.
+   * `--card`, `--border`, `--muted`, `--accent` and `--input` already exist as design
+   * tokens, so they are not re-declared here (that would be a self-reference); the
+   * @theme mapping below points the shadcn colour names at the right token instead.
+   */
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card-foreground: var(--fg);
+  --popover: var(--card);
+  --popover-foreground: var(--fg);
+  --primary: var(--accent);
+  --primary-foreground: var(--accentFg);
+  --secondary: var(--card2);
+  --secondary-foreground: var(--fg);
+  --muted-foreground: var(--muted);
+  --accent-foreground: var(--accentText);
+  --destructive: var(--bad);
+  --destructive-foreground: var(--bg);
+  --ring: var(--accent);
+  --sidebar-foreground: var(--fg);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: var(--accentFg);
+  --sidebar-accent: var(--accentSoft);
+  --sidebar-accent-foreground: var(--accentText);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent);
+}
+
+@theme inline {
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  --animate-dot: dcpulse 2s infinite;
+
+  /* shadcn/ui colour names */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--card2);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accentSoft);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--border2);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Design tokens, so components never need a hex value */
+  --color-bg: var(--bg);
+  --color-card2: var(--card2);
+  --color-field: var(--input);
+  --color-border2: var(--border2);
+  --color-track: var(--track);
+  --color-fg: var(--fg);
+  --color-fg2: var(--fg2);
+  --color-muted2: var(--muted2);
+  --color-brand: var(--accent);
+  --color-brand-foreground: var(--accentFg);
+  --color-brand-text: var(--accentText);
+  --color-brand-soft: var(--accentSoft);
+  --color-brand-border: var(--accentBorder);
+  --color-series2: var(--series2);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--okBg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warnBg);
+  --color-bad: var(--bad);
+  --color-bad-bg: var(--badBg);
+  --color-info: var(--info);
+  --color-info-bg: var(--infoBg);
+  --color-neutral-bg: var(--neutralBg);
+  --color-hot: var(--hot);
+  --color-overlay: var(--overlay);
+  --color-log-bg: var(--log-bg);
+  --color-log-time: var(--log-time);
+  --color-log-fg: var(--log-fg);
+  --color-log-info: var(--log-info);
+  --color-log-warn: var(--log-warn);
+  --color-log-error: var(--log-error);
+  --color-grade-fg: var(--grade-fg);
+  --color-grade-a: var(--grade-a);
+  --color-grade-b: var(--grade-b);
+  --color-grade-c: var(--grade-c);
+  --color-grade-d: var(--grade-d);
+  --color-grade-e: var(--grade-e);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: var(--accentBorder);
+  }
+
+  html {
+    background: var(--bg);
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+}
+
+@keyframes dcpulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 1;
+  }
 }

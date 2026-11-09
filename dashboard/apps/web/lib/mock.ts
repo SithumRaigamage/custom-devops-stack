@@ -193,3 +193,130 @@ export const SONAR_PROJECTS: SonarProject[] = [
     analysed: "5 h ago",
   },
 ];
+
+export const OLLAMA_ENDPOINT = "http://127.0.0.1:11434";
+
+export interface OllamaModel {
+  name: string;
+  size: string;
+  use: string;
+}
+
+/** Copy of the preview's installed-model list. */
+export const OLLAMA_MODELS: OllamaModel[] = [
+  { name: "gpt-oss:20b", size: "13 GB", use: "Assistant · Claude Code (dashboard project)" },
+  { name: "qwen2.5-coder:14b", size: "9.0 GB", use: "Coding fallback" },
+  { name: "qwen2.5:14b", size: "9.0 GB", use: "General chat in Open WebUI" },
+  { name: "deepseek-r1:14b", size: "9.0 GB", use: "Reasoning experiments" },
+  { name: "qwen2.5-coder:3b", size: "1.9 GB", use: "Background tasks" },
+];
+
+export type ChatRole = "user" | "assistant";
+
+export interface ChatMessage {
+  role: ChatRole;
+  text: string;
+}
+
+export const ASSISTANT_MODEL = "gpt-oss:20b";
+
+export const ASSISTANT_GREETING =
+  "Hi Sithum. I can see Jenkins, SonarQube and Open WebUI. Ask me why a build failed, which container is using the most memory, or what SonarQube is complaining about.";
+
+export const ASSISTANT_NEW_CHAT = "New chat. What would you like to know about your stack?";
+
+export const ASSISTANT_SUGGESTIONS = [
+  "Why did my last build fail?",
+  "Is SonarQube healthy?",
+  "Which container uses the most memory?",
+];
+
+/** Status words used by the preview's answer() when it speaks about a service. */
+const STATUS_WORD: Record<string, string> = {
+  healthy: "healthy",
+  unhealthy: "unhealthy",
+  stopped: "stopped",
+  success: "success",
+  failed: "failed",
+  unstable: "unstable",
+  running: "running",
+  aborted: "aborted",
+};
+
+/** The stack snapshot the preview's answer() reads from. */
+const ASSISTANT_SERVICES = [
+  {
+    id: "jenkins",
+    name: "Jenkins",
+    status: "healthy",
+    cpu: SERVICE_METRICS.jenkins.cpu,
+    mem: SERVICE_METRICS.jenkins.memory,
+    memLabel: SERVICE_METRICS.jenkins.memoryLabel,
+    note: SERVICE_METRICS.jenkins.note,
+  },
+  {
+    id: "sonarqube",
+    name: "SonarQube",
+    status: "unhealthy",
+    cpu: SERVICE_METRICS.sonarqube.cpu,
+    mem: SERVICE_METRICS.sonarqube.memory,
+    memLabel: SERVICE_METRICS.sonarqube.memoryLabel,
+    note: SERVICE_METRICS.sonarqube.note,
+  },
+  {
+    id: "openwebui",
+    name: "Open WebUI",
+    status: "stopped",
+    cpu: SERVICE_METRICS["open-webui"].cpu,
+    mem: SERVICE_METRICS["open-webui"].memory,
+    memLabel: SERVICE_METRICS["open-webui"].memoryLabel,
+    note: SERVICE_METRICS["open-webui"].note,
+  },
+];
+
+/**
+ * The preview's answer() logic, kept as a pure function over the mock snapshot so the
+ * Assistant page can reply without an API. Keyword branches are matched in the same
+ * order and return the same wording as the preview.
+ */
+export function assistantAnswer(
+  question: string,
+  loadedModel: string | null = ASSISTANT_MODEL,
+): string {
+  const t = question.toLowerCase();
+  const webui = ASSISTANT_SERVICES[2];
+  const sonar = ASSISTANT_SERVICES[1];
+
+  if (/build|fail|jenkins|pipeline/.test(t)) {
+    const last = BUILDS[0];
+    if (last.status === "failed") {
+      return `Build #${last.num} (${last.job}, ${last.branch}) failed in the Test stage. 1 of 38 tests failed: services.health.test.ts expected Open WebUI to be "healthy" but got "${webui.status}". That test calls the live container, and Open WebUI was down when the build ran. Start Open WebUI and rebuild, or mock the health check in that test so builds don’t depend on it.`;
+    }
+    return `Your last build, #${last.num} (${last.job}), is ${STATUS_WORD[last.status]}. Nothing failing right now.`;
+  }
+
+  if (/sonar|quality|gate|smell|coverage/.test(t)) {
+    if (sonar.status === "unhealthy") {
+      return "SonarQube is up but unhealthy: its health check took 4.8 s and Elasticsearch hit the 90% disk watermark. Free some Docker disk space (docker system df shows usage) and restart the service. Separately, synode-web is failing its quality gate: 2 vulnerabilities, security rating D and 48.2% coverage.";
+    }
+    return `SonarQube is ${STATUS_WORD[sonar.status]}. dashboard-api passes its quality gate with 71.4% coverage; synode-web fails it on 2 vulnerabilities and 48.2% coverage.`;
+  }
+
+  if (/memory|cpu|resource|most|heavy/.test(t)) {
+    const top = [...ASSISTANT_SERVICES].sort((a, b) => b.mem - a.mem)[0];
+    if (top.mem === 0) return "Nothing is running right now, so no container is using memory.";
+    return `${top.name} is using the most memory: ${top.mem}% of its limit (${top.memLabel}) at ${top.cpu}% CPU. ${
+      top.id === "sonarqube"
+        ? "That is normal for SonarQube’s embedded Elasticsearch, but the disk watermark warning is worth fixing."
+        : "That looks normal."
+    }`;
+  }
+
+  if (/open ?webui|ollama|model/.test(t)) {
+    return `Open WebUI is ${STATUS_WORD[webui.status]}. Ollama is reachable at 127.0.0.1:11434 and ${
+      loadedModel ? `${loadedModel} is loaded.` : "no model is loaded."
+    }`;
+  }
+
+  return "I can check service health, explain Jenkins builds, summarise SonarQube issues and read container logs. Try one of the suggestions below.";
+}

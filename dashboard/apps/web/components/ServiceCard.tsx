@@ -13,7 +13,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Service, ServiceAction } from "@/lib/api";
-import { metricsFor } from "@/lib/mock";
 import { useServiceAction } from "@/lib/use-services";
 import { cn } from "@/lib/utils";
 import { StatusBadge, type UiStatus } from "./StatusBadge";
@@ -38,13 +37,16 @@ const OPEN_LINK = cn(BUTTON, "border border-border2 bg-card2 text-fg2 no-underli
 const TEXT_BUTTON =
   "ml-auto inline-flex h-[38px] items-center gap-1.5 rounded-[8px] border border-transparent bg-transparent px-3 text-[13px] font-semibold text-brand-text";
 
-function portFromUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return parsed.port || (parsed.protocol === "https:" ? "443" : "80");
-  } catch {
-    return "—";
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 MB";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
   }
+  return `${value >= 100 ? Math.round(value) : Math.round(value * 10) / 10} ${units[unit]}`;
 }
 
 function Meter({
@@ -86,20 +88,22 @@ export function ServiceCard({
   service: Service;
   onViewLogs: (service: Service) => void;
 }) {
-  const metrics = metricsFor(service.id);
   const mutation = useServiceAction(service.id);
 
   const pendingStatus =
     mutation.isPending && mutation.variables ? PENDING_STATUS[mutation.variables] : null;
   const status: UiStatus = pendingStatus ?? service.status;
-  const running = service.status === "healthy" || service.status === "unhealthy";
+  const running = service.status !== "stopped";
   const busy = pendingStatus !== null;
+
+  const cpuPct = Math.round(service.cpuPct);
+  const memPct = Math.round(service.memPct);
 
   const startDisabled = busy || running;
   const stopDisabled = busy || service.status === "stopped";
 
   const Icon = ICONS[service.id] ?? Server;
-  const note = status === "unhealthy" ? metrics.note : "";
+  const note = status === "unhealthy" ? service.healthNote : "";
 
   return (
     <article className="flex flex-col gap-4 rounded-[14px] border border-border bg-card p-5">
@@ -109,7 +113,7 @@ export function ServiceCard({
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h3 className="m-0 text-base font-semibold text-foreground">{service.name}</h3>
-          <span className="text-xs text-muted-foreground">{metrics.description}</span>
+          <span className="text-xs text-muted-foreground">{service.desc}</span>
         </div>
         <StatusBadge status={status} />
       </div>
@@ -117,21 +121,21 @@ export function ServiceCard({
       <dl className="m-0 grid grid-cols-3 gap-2.5">
         <div className="flex flex-col gap-[3px]">
           <dt className="text-[11px] uppercase tracking-[0.05em] text-muted-foreground">Port</dt>
-          <dd className="m-0 font-mono text-[13px] text-foreground">{portFromUrl(service.url)}</dd>
+          <dd className="m-0 font-mono text-[13px] text-foreground">{service.port}</dd>
         </div>
         <div className="flex flex-col gap-[3px]">
           <dt className="text-[11px] uppercase tracking-[0.05em] text-muted-foreground">Uptime</dt>
-          <dd className="m-0 text-[13px] text-foreground">{metrics.uptime}</dd>
+          <dd className="m-0 text-[13px] text-foreground">{service.uptime}</dd>
         </div>
         <div className="flex flex-col gap-[3px]">
           <dt className="text-[11px] uppercase tracking-[0.05em] text-muted-foreground">Memory</dt>
-          <dd className="m-0 text-[13px] text-foreground">{metrics.memoryLabel}</dd>
+          <dd className="m-0 text-[13px] text-foreground">{formatBytes(service.memBytes)}</dd>
         </div>
       </dl>
 
       <div className="flex flex-col gap-2.5">
-        <Meter label="CPU" value={metrics.cpu} text={`${metrics.cpu}%`} series="cpu" />
-        <Meter label="Memory" value={metrics.memory} text={`${metrics.memory}%`} series="memory" />
+        <Meter label="CPU" value={cpuPct} text={`${cpuPct}%`} series="cpu" />
+        <Meter label="Memory" value={memPct} text={`${memPct}%`} series="memory" />
       </div>
 
       {note && (

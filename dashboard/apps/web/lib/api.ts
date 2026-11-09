@@ -4,17 +4,29 @@
 
 export const API_BASE = "/api";
 
-export type ServiceStatus = "healthy" | "unhealthy" | "stopped";
+export type ServiceStatus =
+  | "healthy"
+  | "unhealthy"
+  | "stopped"
+  | "starting"
+  | "stopping"
+  | "restarting";
 export type ServiceAction = "start" | "stop" | "restart";
 
 export interface Service {
   id: string;
   name: string;
-  folder: string;
-  composeFile: string;
+  desc: string;
+  port: string;
   url: string;
-  health: string;
+  folder: string;
+  image: string;
   status: ServiceStatus;
+  cpuPct: number;
+  memBytes: number;
+  memPct: number;
+  uptime: string;
+  healthNote: string;
 }
 
 export interface AuthStatus {

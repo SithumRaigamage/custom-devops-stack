@@ -1,6 +1,8 @@
 services:
   - id: jenkins
     name: Jenkins
+    desc: CI/CD automation server
+    image: custom-jenkins:latest
     folder: ~/Other/02-DevOps-Lab/custom-devops-stack/jenkins
     composeFile: docker-compose.yml
     url: http://localhost:8080
@@ -8,6 +10,8 @@ services:
 
   - id: sonarqube
     name: SonarQube
+    desc: Code quality and security analysis
+    image: sonarqube:26.1.0.118079-community
     folder: ~/Other/02-DevOps-Lab/custom-devops-stack/sonarqube
     composeFile: docker-compose.yml
     url: http://localhost:9000
@@ -15,6 +19,8 @@ services:
 
   - id: open-webui
     name: Open WebUI
+    desc: Chat UI for your local Ollama models
+    image: ghcr.io/open-webui/open-webui:main
     folder: ~/Other/02-DevOps-Lab/custom-devops-stack/open-webui
     composeFile: docker-compose.yml
     url: http://localhost:3000

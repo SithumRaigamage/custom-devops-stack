@@ -25,7 +25,9 @@ export default function ServicesPage() {
 
       {error ? (
         <div className="rounded-[12px] border border-bad-bg bg-bad-bg px-4 py-3 text-sm text-bad">
-          Can&apos;t reach the API: {error.message}
+          {error.message.includes("docker_unavailable")
+            ? "Docker isn’t running. Start Docker Desktop and reload the page."
+            : `Can’t reach the API: ${error.message}`}
         </div>
       ) : isPending ? (
         <p className="text-sm text-muted-foreground">Loading services…</p>

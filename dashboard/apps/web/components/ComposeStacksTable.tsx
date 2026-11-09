@@ -1,17 +1,14 @@
 import type { Service } from "@/lib/api";
-import { imageFor } from "@/lib/mock";
 import { StatusBadge } from "./StatusBadge";
 
 function folderName(folder: string): string {
   return `${folder.split("/").filter(Boolean).pop() ?? folder}/`;
 }
 
-function healthCheck(health: string): string {
-  try {
-    return `GET ${new URL(health).pathname}`;
-  } catch {
-    return health;
-  }
+function healthLabel(service: Service): string {
+  if (service.healthNote) return service.healthNote;
+  if (service.status === "healthy") return "HTTP health check OK";
+  return "—";
 }
 
 export function ComposeStacksTable({ services }: { services: Service[] }) {
@@ -47,10 +44,10 @@ export function ComposeStacksTable({ services }: { services: Service[] }) {
                   {folderName(service.folder)}
                 </td>
                 <td className="border-b border-track px-3 py-3 font-mono text-xs text-fg2">
-                  {imageFor(service.id)}
+                  {service.image}
                 </td>
                 <td className="border-b border-track px-3 py-3 font-mono text-xs text-fg2">
-                  {healthCheck(service.health)}
+                  {healthLabel(service)}
                 </td>
                 <td className="border-b border-track px-3 py-3">
                   <StatusBadge status={service.status} />

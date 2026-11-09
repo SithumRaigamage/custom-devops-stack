@@ -23,7 +23,9 @@ export const EnvSchema = z.object({
 	// -----------------------------------------------------------------------
 	// Persistence
 	// -----------------------------------------------------------------------
-	DATABASE_PATH: z.string().default("./stackpilot.db"),
+	DATABASE_URL: z
+		.string()
+		.default("postgres://stackpilot:stackpilot@127.0.0.1:5432/stackpilot"),
 
 	// -----------------------------------------------------------------------
 	// Session
@@ -54,7 +56,8 @@ export const EnvSchema = z.object({
 export const PORT = Number(process.env.PORT) || 4000;
 export const HOST = process.env.HOST;
 export const STACK_ROOT = process.env.STACK_ROOT || ".";
-export const DATABASE_PATH = process.env.DATABASE_PATH || "./stackpilot.db";
+export const DATABASE_URL =
+	process.env.DATABASE_URL ?? "postgres://stackpilot:stackpilot@127.0.0.1:5432/stackpilot";
 
 // ---------------------------------------------------------------------------
 // Type-safe environment accessor

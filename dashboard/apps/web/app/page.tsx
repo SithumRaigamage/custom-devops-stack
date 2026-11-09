@@ -10,17 +10,7 @@ import { StatCard } from "@/components/StatCard";
 import { useSearch } from "@/components/search-provider";
 import type { Service } from "@/lib/api";
 import { filterServices } from "@/lib/filter-services";
-import { LAST_BUILD, QUALITY_GATE } from "@/lib/mock";
 import { useServices } from "@/lib/use-services";
-
-const LAST_BUILD_LABEL =
-  LAST_BUILD.status.charAt(0).toUpperCase() + LAST_BUILD.status.slice(1);
-const LAST_BUILD_TONE =
-  LAST_BUILD.status === "success"
-    ? "text-ok"
-    : LAST_BUILD.status === "failed"
-      ? "text-bad"
-      : "text-warn";
 
 export default function OverviewPage() {
   const { data: services, isPending, error } = useServices();
@@ -31,10 +21,11 @@ export default function OverviewPage() {
   const filtered = filterServices(list, query);
 
   const total = list.length;
-  const running = list.filter(
-    (service) => service.status === "healthy" || service.status === "unhealthy",
-  ).length;
+  const running = list.filter((service) => service.status !== "stopped").length;
   const healthy = list.filter((service) => service.status === "healthy").length;
+  const unhealthy = list.filter((service) => service.status === "unhealthy").length;
+  const stopped = list.filter((service) => service.status === "stopped").length;
+  const dockerDown = error?.message.includes("docker_unavailable") ?? false;
   const logService = logsFor ? (list.find((s) => s.id === logsFor.id) ?? logsFor) : null;
 
   return (
@@ -43,7 +34,9 @@ export default function OverviewPage() {
 
       {error ? (
         <div className="rounded-[12px] border border-bad-bg bg-bad-bg px-4 py-3 text-sm text-bad">
-          Can&apos;t reach the API: {error.message}
+          {dockerDown
+            ? "Docker isn’t running. Start Docker Desktop and reload the page."
+            : `Can’t reach the API: ${error.message}`}
         </div>
       ) : isPending ? (
         <p className="text-sm text-muted-foreground">Loading services…</p>
@@ -69,18 +62,20 @@ export default function OverviewPage() {
               tone={healthy === total ? "text-ok" : "text-warn"}
             />
             <StatCard
-              label="Last build"
-              value={LAST_BUILD_LABEL}
-              suffix={`#${LAST_BUILD.number}`}
-              note={`${LAST_BUILD.job} · ${LAST_BUILD.when}`}
-              tone={LAST_BUILD_TONE}
+              label="Unhealthy"
+              value={String(unhealthy)}
+              suffix={`/ ${total}`}
+              note={
+                unhealthy === 0 ? "No failing health checks" : "Container or HTTP health check failing"
+              }
+              tone={unhealthy === 0 ? "text-ok" : "text-warn"}
             />
             <StatCard
-              label="Quality gate"
-              value={QUALITY_GATE.gate}
-              suffix={QUALITY_GATE.project}
-              note={`${QUALITY_GATE.coverage}% coverage · ${QUALITY_GATE.bugs} bugs`}
-              tone={QUALITY_GATE.gate === "Passed" ? "text-ok" : "text-bad"}
+              label="Stopped"
+              value={String(stopped)}
+              suffix={`/ ${total}`}
+              note={stopped === 0 ? "Nothing stopped" : "Stopped containers"}
+              tone={stopped === 0 ? "text-ok" : "text-bad"}
             />
           </section>
 

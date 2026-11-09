@@ -5,6 +5,8 @@ import { parse } from "yaml";
 export interface Service {
   id: string;
   name: string;
+  desc?: string;
+  image?: string;
   folder: string;
   composeFile: string;
   url: string;
@@ -27,6 +29,9 @@ export function loadServices(path = process.env.SERVICES_FILE ?? defaultPath): S
         throw new Error(`${path}: services[${i}] is missing string field "${field}"`);
       }
     }
-    return entry as Service;
+    const service = entry as Service;
+    if (typeof entry.desc !== "string") service.desc = "";
+    if (typeof entry.image !== "string") service.image = "—";
+    return service;
   });
 }

@@ -3,7 +3,8 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { runCompose } from "./compose.js";
 import { loadServices } from "./services.js";
-import { getStatus } from "./status.js";
+import { getServiceDetails } from "./status.js";
+import { isDockerAvailable, listContainersByProject, projectNameForFolder } from "./docker.js";
 import { authRoutes, getSessionUser } from "./auth.js";
 
 const HOST = process.env.HOST ?? "127.0.0.1";
@@ -67,9 +68,23 @@ await app.register(authRoutes);
 
 app.get("/api/health", async () => ({ ok: true }));
 
-app.get("/api/services", async () =>
-  Promise.all(services.map(async (service) => ({ ...service, status: await getStatus(service) }))),
-);
+app.get("/api/services", async (req, reply) => {
+  if (!(await isDockerAvailable())) {
+    return reply.code(503).send({ error: "docker_unavailable" });
+  }
+
+  try {
+    const byProject = await listContainersByProject();
+    return await Promise.all(
+      services.map((service) =>
+        getServiceDetails(service, byProject.get(projectNameForFolder(service.folder))?.[0]),
+      ),
+    );
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(503).send({ error: "docker_unavailable" });
+  }
+});
 
 app.post<{ Params: { id: string; action: string } }>(
   "/api/services/:id/:action",
@@ -80,6 +95,10 @@ app.post<{ Params: { id: string; action: string } }>(
     const action = req.params.action;
     if (!Object.hasOwn(ACTIONS, action)) {
       return reply.code(404).send({ error: `Unknown action "${action}"` });
+    }
+
+    if (!(await isDockerAvailable())) {
+      return reply.code(503).send({ error: "docker_unavailable" });
     }
 
     try {
@@ -109,6 +128,10 @@ app.get<{ Params: { id: string }; Querystring: { tail?: string } }>(
     const tail = /^\d+$/.test(raw) ? Number(raw) : NaN;
     if (!Number.isInteger(tail) || tail < 1 || tail > MAX_TAIL) {
       return reply.code(400).send({ error: `tail must be an integer from 1 to ${MAX_TAIL}` });
+    }
+
+    if (!(await isDockerAvailable())) {
+      return reply.code(503).send({ error: "docker_unavailable" });
     }
 
     try {

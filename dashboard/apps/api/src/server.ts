@@ -1,12 +1,18 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import { runCompose } from "./compose.js";
 import { loadServices } from "./services.js";
 import { getStatus } from "./status.js";
+import { authRoutes, getSessionUser } from "./auth.js";
 
-const HOST = "127.0.0.1";
-const PORT = 4000;
-const ALLOWED_ORIGIN = "http://localhost:3001";
+const HOST = process.env.HOST ?? "127.0.0.1";
+const PORT = Number(process.env.PORT) || 4000;
+const ALLOWED_ORIGINS = new Set(["http://localhost:3001", "http://127.0.0.1:3001"]);
+
+if (HOST !== "127.0.0.1" && HOST !== "localhost") {
+  throw new Error(`HOST must be 127.0.0.1 or localhost (got "${HOST}")`);
+}
 
 const ACTION_TIMEOUT_MS = 5 * 60 * 1000;
 const LOGS_TIMEOUT_MS = 15 * 1000;
@@ -25,16 +31,41 @@ const byId = new Map(services.map((s) => [s.id, s]));
 
 const app = Fastify({ logger: true });
 
-await app.register(cors, { origin: ALLOWED_ORIGIN });
+await app.register(cors, {
+  origin: (origin, callback) => {
+    callback(null, origin === undefined || ALLOWED_ORIGINS.has(origin));
+  },
+  credentials: true,
+});
+
+// Per-route limits only; nothing is limited globally.
+await app.register(rateLimit, { global: false });
 
 // State-changing requests are simple cross-site POSTs a browser sends without a
 // preflight, so refuse any that carry a foreign Origin header.
 app.addHook("onRequest", async (req, reply) => {
   const origin = req.headers.origin;
-  if (req.method === "POST" && origin !== undefined && origin !== ALLOWED_ORIGIN) {
+  if (req.method === "POST" && origin !== undefined && !ALLOWED_ORIGINS.has(origin)) {
     return reply.code(403).send({ error: "Origin not allowed" });
   }
 });
+
+// Every service route needs a session, and POSTs also need the X-StackPilot header.
+app.addHook("onRequest", async (req, reply) => {
+  const path = (req.url ?? "/").split("?")[0];
+  if (!path.startsWith("/api/services") || req.method === "OPTIONS") return;
+
+  const user = await getSessionUser(req);
+  if (!user) return reply.code(401).send({ error: "Unauthenticated" });
+
+  if (req.method !== "GET" && req.headers["x-stackpilot"] !== "1") {
+    return reply.code(403).send({ error: "Missing X-StackPilot: 1 header" });
+  }
+});
+
+await app.register(authRoutes);
+
+app.get("/api/health", async () => ({ ok: true }));
 
 app.get("/api/services", async () =>
   Promise.all(services.map(async (service) => ({ ...service, status: await getStatus(service) }))),

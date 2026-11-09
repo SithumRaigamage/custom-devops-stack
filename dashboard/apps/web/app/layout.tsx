@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import type { ReactNode } from "react";
-import { AppShell } from "@/components/AppShell";
+import { AuthGate } from "@/components/auth-gate";
 import { ThemeProvider } from "@/components/theme-provider";
 import { themeInitScript } from "@/lib/theme-script";
 import { Providers } from "./providers";
@@ -38,7 +38,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="min-h-screen bg-background text-foreground antialiased">
         <ThemeProvider>
           <Providers>
-            <AppShell>{children}</AppShell>
+            <AuthGate>{children}</AuthGate>
           </Providers>
         </ThemeProvider>
       </body>

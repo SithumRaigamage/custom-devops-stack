@@ -13,7 +13,7 @@ custom-devops-stack/
 ├── script.sh        # Start/stop Jenkins, SonarQube and MongoDB together
 ├── jenkins/         # CI/CD server
 ├── sonarqube/       # Code quality (+ PostgreSQL)
-├── open-webui/      # Chat UI for local Ollama models (standalone, own scripts)
+├── open-webui/      # Chat UI for local Ollama models (own scripts + `webui` shell command)
 ├── images/          # Saved image tars for offline reload (git-ignored)
 └── docs/            # Tools and practices roadmaps
 ```
@@ -21,12 +21,23 @@ custom-devops-stack/
 How to work here:
 
 1. Start Docker Desktop (it does not start at login). Ollama must also be running for Open WebUI.
-2. Start what you need: `./script.sh start` for Jenkins/SonarQube/MongoDB, or `./open-webui/webui.sh` for Open WebUI.
+2. Start what you need: `./script.sh start` for Jenkins/SonarQube/MongoDB, or `webui start` for Open WebUI (from any directory, once the shell helper is installed, see below).
 3. Work in the service's UI (see **Access Services**), keeping config in each service's folder and in Git.
-4. Stop with `./script.sh stop`, and `cd open-webui && docker compose stop` for Open WebUI.
+4. Stop with `./script.sh stop`, and `webui stop` for Open WebUI.
 5. Never commit secrets: real values go in gitignored `.env` files, with `.env.example` as the template.
 
 Note: `script.sh` does not manage Open WebUI, which is started and stopped on its own.
+
+### Open WebUI shell command (`webui`)
+
+Add this line to `~/.zshrc` and open a new terminal:
+
+```bash
+source "$HOME/Other/02-DevOps-Lab/custom-devops-stack/open-webui/webui.zsh"
+```
+
+Then from any directory: `webui start | stop | restart | status | logs [-f] | open | update | cd | help`.
+Full table in `open-webui/README.md`.
 
 ## 📦 Services
 

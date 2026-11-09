@@ -92,3 +92,14 @@ export const SERVICE_METRICS: Record<string, ServiceMetrics> = {
 export function metricsFor(id: string): ServiceMetrics {
   return SERVICE_METRICS[id] ?? DEFAULT_METRICS;
 }
+
+/** Container images, until the API reports them from the Compose files. */
+export const SERVICE_IMAGES: Record<string, string> = {
+  jenkins: "custom-jenkins:lts-jdk21",
+  sonarqube: "sonarqube:community",
+  "open-webui": "ghcr.io/open-webui/open-webui:main",
+};
+
+export function imageFor(id: string): string {
+  return SERVICE_IMAGES[id] ?? "—";
+}

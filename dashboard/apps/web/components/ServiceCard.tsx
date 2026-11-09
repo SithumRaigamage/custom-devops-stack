@@ -79,7 +79,13 @@ function Meter({
   );
 }
 
-export function ServiceCard({ service }: { service: Service }) {
+export function ServiceCard({
+  service,
+  onViewLogs,
+}: {
+  service: Service;
+  onViewLogs: (service: Service) => void;
+}) {
   const metrics = metricsFor(service.id);
   const mutation = useServiceAction(service.id);
 
@@ -172,7 +178,7 @@ export function ServiceCard({ service }: { service: Service }) {
           <ExternalLink className="size-[13px]" strokeWidth={2} aria-hidden="true" />
           Open
         </a>
-        <button type="button" className={TEXT_BUTTON}>
+        <button type="button" onClick={() => onViewLogs(service)} className={TEXT_BUTTON}>
           <Terminal className="size-[14px]" strokeWidth={2} aria-hidden="true" />
           View Logs
         </button>

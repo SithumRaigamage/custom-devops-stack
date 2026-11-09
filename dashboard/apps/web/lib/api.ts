@@ -36,3 +36,17 @@ export async function runServiceAction(id: string, action: ServiceAction): Promi
   });
   if (!res.ok) throw new Error(await errorMessage(res));
 }
+
+export async function fetchServiceLogs(
+  id: string,
+  tail = 100,
+  signal?: AbortSignal,
+): Promise<string> {
+  const res = await fetch(`${SERVICES_URL}/${encodeURIComponent(id)}/logs?tail=${tail}`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  const body: { logs?: unknown } = await res.json();
+  return typeof body.logs === "string" ? body.logs : "";
+}

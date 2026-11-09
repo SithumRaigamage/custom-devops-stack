@@ -1,12 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { LogsDrawer } from "@/components/LogsDrawer";
 import { PageHeader } from "@/components/PageHeader";
 import { ResourceChart } from "@/components/ResourceChart";
-import { ServiceCard } from "@/components/ServiceCard";
+import { ServiceGrid } from "@/components/ServiceGrid";
 import { StatCard } from "@/components/StatCard";
 import { useSearch } from "@/components/search-provider";
-import { LAST_BUILD, QUALITY_GATE, metricsFor } from "@/lib/mock";
+import type { Service } from "@/lib/api";
+import { filterServices } from "@/lib/filter-services";
+import { LAST_BUILD, QUALITY_GATE } from "@/lib/mock";
 import { useServices } from "@/lib/use-services";
 
 const LAST_BUILD_LABEL =
@@ -21,22 +25,17 @@ const LAST_BUILD_TONE =
 export default function OverviewPage() {
   const { data: services, isPending, error } = useServices();
   const { query } = useSearch();
+  const [logsFor, setLogsFor] = useState<Service | null>(null);
 
   const list = services ?? [];
-  const normalized = query.trim().toLowerCase();
-  const filtered = normalized
-    ? list.filter((service) =>
-        `${service.name} ${metricsFor(service.id).description}`
-          .toLowerCase()
-          .includes(normalized),
-      )
-    : list;
+  const filtered = filterServices(list, query);
 
   const total = list.length;
   const running = list.filter(
     (service) => service.status === "healthy" || service.status === "unhealthy",
   ).length;
   const healthy = list.filter((service) => service.status === "healthy").length;
+  const logService = logsFor ? (list.find((s) => s.id === logsFor.id) ?? logsFor) : null;
 
   return (
     <>
@@ -85,26 +84,12 @@ export default function OverviewPage() {
             />
           </section>
 
-          <section aria-label="Services" className="flex flex-col gap-3.5">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="m-0 text-base font-semibold text-foreground">Services</h2>
-              <span className="text-xs text-muted-foreground">
-                {filtered.length} of {total} shown
-              </span>
-            </div>
-
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4">
-              {filtered.map((service) => (
-                <ServiceCard key={service.id} service={service} />
-              ))}
-            </div>
-
-            {filtered.length === 0 && (
-              <div className="rounded-[14px] border border-dashed border-border2 p-7 text-center text-muted-foreground">
-                No services match “{query}”.
-              </div>
-            )}
-          </section>
+          <ServiceGrid
+            services={filtered}
+            total={total}
+            query={query}
+            onViewLogs={setLogsFor}
+          />
 
           <div className="flex flex-wrap gap-4">
             <ResourceChart />
@@ -112,6 +97,8 @@ export default function OverviewPage() {
           </div>
         </>
       )}
+
+      {logService && <LogsDrawer service={logService} onClose={() => setLogsFor(null)} />}
     </>
   );
 }

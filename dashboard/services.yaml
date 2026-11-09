@@ -1,0 +1,21 @@
+services:
+  - id: jenkins
+    name: Jenkins
+    folder: ~/Other/02-DevOps-Lab/custom-devops-stack/jenkins
+    composeFile: docker-compose.yml
+    url: http://localhost:8080
+    health: http://localhost:8080/login
+
+  - id: sonarqube
+    name: SonarQube
+    folder: ~/Other/02-DevOps-Lab/custom-devops-stack/sonarqube
+    composeFile: docker-compose.yml
+    url: http://localhost:9000
+    health: http://localhost:9000/api/system/status
+
+  - id: open-webui
+    name: Open WebUI
+    folder: ~/Other/02-DevOps-Lab/custom-devops-stack/open-webui
+    composeFile: docker-compose.yml
+    url: http://localhost:3000
+    health: http://localhost:3000/health

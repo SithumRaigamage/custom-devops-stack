@@ -2,6 +2,32 @@
 
 This directory (`custom-devops-stack/`) contains the Docker configurations and control script for your complete local CI/CD infrastructure.
 
+## 🧭 Workspace at a Glance
+
+A local DevOps lab on one Mac. Each service lives in its own subfolder with its
+own `docker-compose.yml`, README and bind-mounted data (no named volumes, so
+`docker volume prune` cannot delete it).
+
+```
+custom-devops-stack/
+├── script.sh        # Start/stop Jenkins, SonarQube and MongoDB together
+├── jenkins/         # CI/CD server
+├── sonarqube/       # Code quality (+ PostgreSQL)
+├── open-webui/      # Chat UI for local Ollama models (standalone, own scripts)
+├── images/          # Saved image tars for offline reload (git-ignored)
+└── docs/            # Tools and practices roadmaps
+```
+
+How to work here:
+
+1. Start Docker Desktop (it does not start at login). Ollama must also be running for Open WebUI.
+2. Start what you need: `./script.sh start` for Jenkins/SonarQube/MongoDB, or `./open-webui/webui.sh` for Open WebUI.
+3. Work in the service's UI (see **Access Services**), keeping config in each service's folder and in Git.
+4. Stop with `./script.sh stop`, and `cd open-webui && docker compose stop` for Open WebUI.
+5. Never commit secrets: real values go in gitignored `.env` files, with `.env.example` as the template.
+
+Note: `script.sh` does not manage Open WebUI, which is started and stopped on its own.
+
 ## 📦 Services
 
 ### 1. Jenkins (`./jenkins`)
@@ -18,7 +44,16 @@ This directory (`custom-devops-stack/`) contains the Docker configurations and c
   - `./sonarqube/postgresql` (Database)
 - **Documentation**: See `sonarqube/README.md`
 
-### 3. MongoDB (local manual install, outside this folder)
+### 3. Open WebUI (`./open-webui`)
+- **Purpose**: Chat interface for local Ollama models
+- **Port**: 3000 (bound to `127.0.0.1` only)
+- **Data Location**: `./open-webui/data` (chats and settings)
+- **Image backup**: `./open-webui/backup/open-webui-image.tar` (reloaded if a prune removes the image)
+- **Requires**: Ollama running on the host (`http://localhost:11434`)
+- **Documentation**: See `open-webui/README.md`
+- **Not** on `devops-network`; it reaches Ollama through `host.docker.internal`
+
+### 4. MongoDB (local manual install, outside this folder)
 - **Purpose**: General-purpose database used by local projects
 - **Port**: 27018 (default; override with `MONGO_PORT=xxxxx ./script.sh mongo-start`) — not 27017, because an unrelated project's `expense-tracker-db` Docker container already binds 27017 on this machine
 - **Binary**: `../mongodb-macos-aarch64--8.2.3/bin/mongod`
@@ -80,6 +115,7 @@ pgrep -x mongod
 ### Access Services
 - **Jenkins**: http://localhost:8080
 - **SonarQube**: http://localhost:9000
+- **Open WebUI**: http://localhost:3000
 - **MongoDB**: mongodb://localhost:27018
 
 ## 🔗 Integration Guide
@@ -155,6 +191,8 @@ All data is stored on your local machine:
 | SonarQube | Extensions/Plugins | `./sonarqube/extensions` |
 | SonarQube | Logs | `./sonarqube/logs` |
 | PostgreSQL | Database files | `./sonarqube/postgresql` |
+| Open WebUI | Chats and settings | `./open-webui/data` |
+| Open WebUI | Image backup tar | `./open-webui/backup` |
 | MongoDB | Database files | `../mongodb-macos-aarch64--8.2.3/data/db` |
 
 **Important**: Deleting Docker containers will NOT delete your data!

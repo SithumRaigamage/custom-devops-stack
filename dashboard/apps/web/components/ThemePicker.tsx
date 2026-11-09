@@ -66,7 +66,7 @@ export function ThemePicker({
         <div
           role="dialog"
           aria-label="Choose a theme"
-          className="absolute right-0 top-[50px] z-40 flex w-[400px] max-w-[90vw] flex-col gap-3.5 rounded-[14px] border border-border2 bg-card p-4 shadow-[var(--shadow-popover)]"
+          className="absolute right-0 top-[50px] z-40 flex w-[400px] max-w-[90vw] flex-col gap-3.5 rounded-[14px] border border-border2 bg-card p-4 shadow-[var(--shadow-popover)] max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto max-sm:w-auto max-sm:max-w-none"
         >
           <div className="flex items-center gap-2">
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">

@@ -13,6 +13,7 @@ import {
   SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
+import { useServices } from "@/lib/use-services";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -33,6 +34,11 @@ const NAV_ITEMS: NavItem[] = [
 
 export function Sidebar({ unhealthyCount = 0 }: { unhealthyCount?: number }) {
   const pathname = usePathname();
+  const { data: services } = useServices();
+  const attention = services
+    ? services.filter((service) => service.status === "unhealthy" || service.status === "stopped")
+        .length
+    : unhealthyCount;
 
   return (
     <aside className="flex flex-[1_1_220px] flex-col gap-6 border-r border-border bg-sidebar px-3.5 py-5">
@@ -51,7 +57,7 @@ export function Sidebar({ unhealthyCount = 0 }: { unhealthyCount?: number }) {
       <nav aria-label="Main" className="flex flex-col gap-0.5">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
-          const showBadge = href === "/services" && unhealthyCount > 0;
+          const showBadge = href === "/services" && attention > 0;
 
           return (
             <Link
@@ -69,7 +75,7 @@ export function Sidebar({ unhealthyCount = 0 }: { unhealthyCount?: number }) {
               <span className="flex-1 text-left text-muted-foreground">{label}</span>
               {showBadge && (
                 <span className="rounded-full bg-bad-bg px-[7px] py-[2px] text-[11px] font-bold text-bad">
-                  {unhealthyCount}
+                  {attention}
                 </span>
               )}
             </Link>

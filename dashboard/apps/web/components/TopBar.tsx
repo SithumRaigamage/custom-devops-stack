@@ -33,7 +33,8 @@ interface TopBarProps {
 export function TopBar({ notifications = [], onStartAll, onStopAll }: TopBarProps) {
   const { dark, toggleMode } = useTheme();
   const { query, setQuery } = useSearch();
-  const [unread, setUnread] = useState(notifications.length);
+  // The preview starts with three unread activities.
+  const [unread, setUnread] = useState(Math.min(3, notifications.length));
   const [open, setOpen] = useState<"theme" | "notifications" | null>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
 
@@ -137,7 +138,7 @@ export function TopBar({ notifications = [], onStartAll, onStopAll }: TopBarProp
           </button>
 
           {open === "notifications" && (
-            <div className="absolute right-0 top-[50px] z-30 w-[320px] max-w-[86vw] rounded-[12px] border border-border2 bg-card2 p-2 shadow-[var(--shadow-popover-strong)]">
+            <div className="absolute right-0 top-[50px] z-30 w-[320px] max-w-[86vw] rounded-[12px] border border-border2 bg-card2 p-2 shadow-[var(--shadow-popover-strong)] max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto max-sm:w-auto max-sm:max-w-none">
               <div className="px-2.5 py-2 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Notifications
               </div>

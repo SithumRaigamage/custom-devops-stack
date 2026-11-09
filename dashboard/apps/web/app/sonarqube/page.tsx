@@ -56,7 +56,8 @@ export default function SonarQubePage() {
     <>
       <PageHeader title="SonarQube" sub="Code quality and quality gates for your projects." />
 
-      <div role="group" aria-label="Project" className="flex flex-wrap gap-2">
+      <div className="flex flex-col gap-4">
+        <div role="group" aria-label="Project" className="flex flex-wrap gap-2">
         {SONAR_PROJECTS.map((entry, i) => {
           const isActive = i === active;
           return (
@@ -150,7 +151,8 @@ export default function SonarQubePage() {
         <span className="font-mono text-[13px] text-fg2">
           {project.coverage.toFixed(1)}% covered
         </span>
-      </section>
+        </section>
+      </div>
     </>
   );
 }

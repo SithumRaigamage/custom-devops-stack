@@ -235,6 +235,19 @@ export function buildTheme(t: ThemeDef, dark: boolean): ThemeTokens {
         : "#FFFFFF";
   }
 
+  // Mid-luminance accents can leave the generated ink just under 4.5:1. Black or
+  // white always has a passing side, so only upgrade the themes that need it.
+  const ink = p.accentFg as string;
+  if (contrast(ink, p.accent as string) < 4.5) {
+    p.accentFg = ["#000000", "#FFFFFF"].reduce(
+      (best, candidate) =>
+        contrast(candidate, p.accent as string) > contrast(best, p.accent as string)
+          ? candidate
+          : best,
+      ink,
+    );
+  }
+
   p.accentSoft = rgba(p.accent as string, dark ? 0.14 : 0.12);
   p.accentBorder = rgba(p.accent as string, 0.45);
 
@@ -257,7 +270,7 @@ export function buildTheme(t: ThemeDef, dark: boolean): ThemeTokens {
       ok: "#047857",
       okBg: "rgba(5,150,105,0.12)",
       warn: "#B45309",
-      warnBg: "rgba(217,119,6,0.13)",
+      warnBg: "rgba(217,119,6,0.10)",
       bad: "#B91C1C",
       badBg: "rgba(220,38,38,0.10)",
       info: "#1D4ED8",

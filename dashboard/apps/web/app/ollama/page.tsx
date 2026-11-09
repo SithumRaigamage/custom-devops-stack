@@ -16,7 +16,8 @@ export default function OllamaPage() {
     <>
       <PageHeader title="Ollama" sub="Local models that power the assistant and Open WebUI." />
 
-      <section
+      <div className="flex flex-col gap-4">
+        <section
         aria-label="Ollama endpoint"
         className="flex flex-wrap items-center gap-5 rounded-[14px] border border-border bg-card p-5"
       >
@@ -65,7 +66,8 @@ export default function OllamaPage() {
             </div>
           );
         })}
-      </section>
+        </section>
+      </div>
     </>
   );
 }

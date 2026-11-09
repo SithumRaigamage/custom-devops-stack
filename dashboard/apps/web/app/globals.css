@@ -10,36 +10,11 @@
  * only matter for the first paint before the stored theme is applied.
  */
 :root {
-  --bg: #070b0b;
-  --sidebar: #0a1010;
-  --card: #0e1515;
-  --card2: #121b1b;
-  --input: #0a1111;
-  --border: #1c2929;
-  --border2: #253535;
-  --track: #172424;
-  --fg: #e6f0ef;
-  --fg2: #c9d8d6;
-  --muted: #8fa3a1;
-  --muted2: #a7b8b6;
-  --accent: #14b8a6;
-  --accentFg: #042f2e;
-  --accentText: #5eead4;
-  --accentSoft: rgba(20, 184, 166, 0.14);
-  --accentBorder: rgba(20, 184, 166, 0.45);
-  --series2: #a5b4fc;
-
-  --ok: #2dd4bf;
-  --okBg: rgba(45, 212, 191, 0.14);
-  --warn: #fbbf24;
-  --warnBg: rgba(245, 158, 11, 0.14);
-  --bad: #fca5a5;
-  --badBg: rgba(248, 113, 113, 0.13);
-  --info: #93c5fd;
-  --infoBg: rgba(96, 165, 250, 0.14);
-  --neutralBg: rgba(148, 163, 184, 0.12);
-  --hot: #f59e0b;
-  --overlay: rgba(0, 0, 0, 0.6);
+  /*
+   * Theme and status tokens are written onto <html> before first paint by
+   * themeInitScript() from buildTheme() in lib/themes.ts, so their values live there
+   * and are not repeated here. Only the fixed log and grade palettes are CSS-only.
+   */
 
   /* Fixed regardless of theme: the log viewer is always a dark terminal. */
   --log-bg: #060a0a;

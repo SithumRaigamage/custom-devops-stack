@@ -21,7 +21,8 @@ export default function JenkinsPage() {
     <>
       <PageHeader title="Jenkins" sub="Recent pipeline runs from your Jenkins server." />
 
-      <section
+      <div className="flex flex-col gap-4">
+        <section
         aria-label="Build summary"
         className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4"
       >
@@ -110,7 +111,8 @@ export default function JenkinsPage() {
             </tbody>
           </table>
         </div>
-      </section>
+        </section>
+      </div>
     </>
   );
 }

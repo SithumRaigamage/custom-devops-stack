@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.4.1",
+    "@fastify/rate-limit": "^11.2.2",
+    "argon2": "^0.45.2",
     "better-sqlite3": "^13.0.3",
     "dotenv": "^18.0.9",
     "drizzle-kit": "^0.31.11",

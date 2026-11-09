@@ -1,14 +1,11 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { Env, env } from "./config.js";
 import { runCompose } from "./compose.js";
 import { loadServices } from "./services.js";
 import { getStatus } from "./status.js";
 
-// HOST is validated by the config module; the server refuses to start
-// if it is not exactly 127.0.0.1 or localhost.
-const HOST = env.HOST;
-const PORT = Number(env.PORT) || 4000;
+const HOST = "127.0.0.1";
+const PORT = 4000;
 const ALLOWED_ORIGIN = "http://localhost:3001";
 
 const ACTION_TIMEOUT_MS = 5 * 60 * 1000;

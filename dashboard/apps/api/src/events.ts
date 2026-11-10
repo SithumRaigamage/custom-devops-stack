@@ -5,6 +5,7 @@ import { getServiceDetails, type ServiceDetail, type Status } from "./status.js"
 import { getSettings } from "./settings.js";
 import { evaluateAlerts } from "./alerts.js";
 import { broadcast } from "./sse.js";
+import { recordStatusSamples } from "./uptime.js";
 
 export { addEventClient, broadcast } from "./sse.js";
 
@@ -93,6 +94,17 @@ export function startServiceMonitor(services: Service[]): void {
 
     try {
       if (!(await isDockerAvailable())) {
+        // Docker being unavailable still counts as downtime for every service.
+        await recordStatusSamples(
+          services.map((service) => ({
+            id: service.id,
+            name: service.name,
+            status: "stopped" as const,
+          })),
+        ).catch(() => {
+          // History is best-effort; monitoring must keep running.
+        });
+
         // No container status to judge, but the external rules still run.
         await evaluateAlerts([]);
         return;
@@ -106,6 +118,16 @@ export function startServiceMonitor(services: Service[]): void {
       );
 
       broadcast("stats", { ts: Date.now(), services: details });
+
+      await recordStatusSamples(
+        details.map((detail) => ({
+          id: detail.id,
+          name: detail.name,
+          status: detail.status,
+        })),
+      ).catch(() => {
+        // History is best-effort; monitoring must keep running.
+      });
 
       // Alert rules run on every status tick, independent of the UI.
       await evaluateAlerts(details);

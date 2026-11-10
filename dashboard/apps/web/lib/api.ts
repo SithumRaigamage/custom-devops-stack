@@ -399,6 +399,41 @@ export async function fetchMetricsRange(
   return requestJSON<MetricsResponse>(`/metrics?range=${range}`, { signal });
 }
 
+// --- Uptime ---
+
+export type UptimeStatus =
+  | "healthy"
+  | "unhealthy"
+  | "stopped"
+  | "starting"
+  | "stopping"
+  | "restarting";
+
+export interface UptimeHour {
+  start: number;
+  status: UptimeStatus | null;
+}
+
+export interface ServiceUptime {
+  id: string;
+  name: string;
+  uptime24h: number | null;
+  uptime7d: number | null;
+  samples24h: number;
+  samples7d: number;
+  hours: UptimeHour[];
+}
+
+export interface UptimeResponse {
+  from: number;
+  to: number;
+  services: ServiceUptime[];
+}
+
+export async function fetchUptime(signal?: AbortSignal): Promise<UptimeResponse> {
+  return requestJSON<UptimeResponse>("/uptime", { signal });
+}
+
 // --- Settings ---
 
 export interface AlertRuleToggles {
@@ -497,6 +532,28 @@ export async function sendTestNotification(): Promise<{
   telegram: ChannelResult;
 }> {
   return requestJSON("/notifications/test", { method: "POST" });
+}
+
+// --- Incidents ---
+
+export interface Incident {
+  id: number;
+  start: number;
+  end: number;
+  durationMs: number;
+  cause: string;
+  severity: AlertSeverity;
+  rule: string;
+  serviceKey: string | null;
+  link: string | null;
+}
+
+export interface IncidentsResponse {
+  incidents: Incident[];
+}
+
+export async function fetchIncidents(signal?: AbortSignal): Promise<IncidentsResponse> {
+  return requestJSON<IncidentsResponse>("/incidents?limit=50", { signal });
 }
 
 // --- Service registry ---

@@ -15,6 +15,8 @@ import {
   setIntentionalStop,
 } from "./alerts.js";
 import { parseMetricsRange, readMetricsRange, startMetricsSampler } from "./metrics.js";
+import { listIncidents } from "./incidents.js";
+import { readUptime } from "./uptime.js";
 import {
   getSettings,
   publicSettings,
@@ -366,6 +368,33 @@ app.get<{ Querystring: { range?: string } }>("/api/metrics", async (req, reply) 
   } catch (err) {
     req.log.error(err);
     return reply.code(503).send({ error: "metrics_unavailable" });
+  }
+});
+
+// ---- Uptime and incidents -------------------------------------------------
+
+app.get("/api/uptime", async (req, reply) => {
+  try {
+    return await readUptime();
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(503).send({ error: "uptime_unavailable" });
+  }
+});
+
+app.get<{ Querystring: { limit?: string } }>("/api/incidents", async (req, reply) => {
+  const raw = req.query.limit;
+  const limit = raw === undefined ? 50 : Number(raw);
+
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+    return reply.code(400).send({ error: "limit must be an integer from 1 to 200" });
+  }
+
+  try {
+    return await listIncidents(limit);
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(503).send({ error: "incidents_unavailable" });
   }
 });
 

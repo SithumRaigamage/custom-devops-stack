@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { Service, ServiceAction } from "@/lib/api";
 import { useServiceAction } from "@/lib/use-services";
+import { useUptime } from "@/lib/use-uptime";
 import { cn } from "@/lib/utils";
 import { StatusBadge, type UiStatus } from "./StatusBadge";
 
@@ -49,6 +50,17 @@ const GHOST = cn(BUTTON, "border border-border2 bg-card2 text-fg2");
 const OPEN_LINK = cn(BUTTON, "border border-border2 bg-card2 text-fg2 no-underline");
 const TEXT_BUTTON =
   "ml-auto inline-flex h-[38px] items-center gap-1.5 rounded-[8px] border border-transparent bg-transparent px-3 text-[13px] font-semibold text-brand-text";
+
+function formatUptimePct(value: number | null | undefined): string {
+  return value === null || value === undefined ? "—" : `${value.toFixed(1)}%`;
+}
+
+function uptimeTone(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "text-muted-foreground";
+  if (value >= 99.5) return "text-ok";
+  if (value >= 95) return "text-warn";
+  return "text-bad";
+}
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 MB";
@@ -102,6 +114,8 @@ export function ServiceCard({
   onViewLogs: (service: Service) => void;
 }) {
   const mutation = useServiceAction(service.id);
+  const { data: uptimeData } = useUptime();
+  const uptimeStats = uptimeData?.services.find((entry) => entry.id === service.id);
 
   const pendingStatus =
     mutation.isPending && mutation.variables ? PENDING_STATUS[mutation.variables] : null;
@@ -130,6 +144,34 @@ export function ServiceCard({
           <span className="text-xs text-muted-foreground">{service.desc}</span>
         </div>
         <StatusBadge status={status} />
+      </div>
+
+      <div
+        className="flex items-center gap-2 text-[11px] text-muted-foreground"
+        title={
+          uptimeStats
+            ? `${uptimeStats.samples24h} status samples in the last 24 hours, ${uptimeStats.samples7d} in the last 7 days`
+            : "No status samples yet"
+        }
+      >
+        <span className="uppercase tracking-[0.05em]">Uptime 24h</span>
+        <span
+          className={cn(
+            "font-mono text-[12px] font-semibold",
+            uptimeTone(uptimeStats?.uptime24h),
+          )}
+        >
+          {formatUptimePct(uptimeStats?.uptime24h)}
+        </span>
+        <span className="ml-auto uppercase tracking-[0.05em]">7d</span>
+        <span
+          className={cn(
+            "font-mono text-[12px] font-semibold",
+            uptimeTone(uptimeStats?.uptime7d),
+          )}
+        >
+          {formatUptimePct(uptimeStats?.uptime7d)}
+        </span>
       </div>
 
       <dl className="m-0 grid grid-cols-3 gap-2.5">

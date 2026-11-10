@@ -106,7 +106,20 @@ interface ServiceForm {
   url: string;
   healthPath: string;
   icon: string;
+  startCommand: string;
+  stopCommand: string;
 }
+
+const COMMAND_OPTIONS = [
+  { value: "", label: "None" },
+  { value: "jenkins-start", label: "jenkins-start" },
+  { value: "jenkins-stop", label: "jenkins-stop" },
+  { value: "sonar-start", label: "sonar-start" },
+  { value: "sonar-stop", label: "sonar-stop" },
+  { value: "mongo-start", label: "mongo-start" },
+  { value: "mongo-stop", label: "mongo-stop" },
+  { value: "webui", label: "webui (use action)" },
+] as const;
 
 function healthPathFor(service?: RegistryService): string {
   if (!service) return "/";
@@ -640,6 +653,8 @@ function ServiceDialog({
     url: service?.url ?? "http://localhost",
     healthPath: healthPathFor(service),
     icon: service?.icon ?? "server",
+    startCommand: service?.startCommand ?? "",
+    stopCommand: service?.stopCommand ?? "",
   }));
   const [error, setError] = useState<string | null>(null);
 
@@ -666,6 +681,8 @@ function ServiceDialog({
       healthPath: form.healthPath.trim() || "/",
       icon: form.icon,
       ...(service?.desc ? { desc: service.desc } : {}),
+      ...(form.startCommand ? { startCommand: form.startCommand } : {}),
+      ...(form.stopCommand ? { stopCommand: form.stopCommand } : {}),
     };
 
     try {
@@ -787,6 +804,33 @@ function ServiceDialog({
               required
             />
           </label>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className={LABEL_CLASS}>
+              Start command
+              <select
+                value={form.startCommand}
+                onChange={(event) => update("startCommand", event.target.value)}
+                className={INPUT_CLASS}
+              >
+                {COMMAND_OPTIONS.map((command) => (
+                  <option key={command.value} value={command.value}>{command.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className={LABEL_CLASS}>
+              Stop command
+              <select
+                value={form.stopCommand}
+                onChange={(event) => update("stopCommand", event.target.value)}
+                className={INPUT_CLASS}
+              >
+                {COMMAND_OPTIONS.map((command) => (
+                  <option key={command.value} value={command.value}>{command.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
 
           {error && <p className="m-0 text-[13px] text-bad">{error}</p>}
 

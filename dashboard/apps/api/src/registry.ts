@@ -27,6 +27,15 @@ const COMPOSE_CANDIDATES = [
 ];
 
 const SERVICE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const OPERATOR_COMMANDS = [
+  "jenkins-start",
+  "jenkins-stop",
+  "sonar-start",
+  "sonar-stop",
+  "mongo-start",
+  "mongo-stop",
+  "webui",
+] as const;
 
 const ServiceInputSchema = z.object({
   id: z
@@ -56,6 +65,8 @@ const ServiceInputSchema = z.object({
     .regex(/^\//, "Health path must start with /")
     .max(512),
   icon: z.string().trim().max(64).optional(),
+  startCommand: z.enum(OPERATOR_COMMANDS).optional(),
+  stopCommand: z.enum(OPERATOR_COMMANDS).optional(),
 });
 
 /** An error that maps directly onto an HTTP status. */
@@ -269,6 +280,8 @@ export async function createService(input: unknown): Promise<Service> {
     health: withHealthPath(url, data.data.healthPath),
     port: data.data.port,
     ...(data.data.icon ? { icon: data.data.icon } : {}),
+    ...(data.data.startCommand ? { startCommand: data.data.startCommand } : {}),
+    ...(data.data.stopCommand ? { stopCommand: data.data.stopCommand } : {}),
   };
 
   writeRegistry([...services, service]);
@@ -310,6 +323,10 @@ export async function updateService(id: string, input: unknown): Promise<Service
   } else {
     delete updated.icon;
   }
+  if (data.data.startCommand) updated.startCommand = data.data.startCommand;
+  else delete updated.startCommand;
+  if (data.data.stopCommand) updated.stopCommand = data.data.stopCommand;
+  else delete updated.stopCommand;
 
   const next = [...services];
   next[index] = updated;

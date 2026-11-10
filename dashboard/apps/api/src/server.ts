@@ -3,7 +3,7 @@ import Fastify, { type FastifyReply } from "fastify";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import { z } from "zod";
-import { runCompose, serviceCwd } from "./compose.js";
+import { runCompose, runOperatorCommand, serviceCwd } from "./compose.js";
 import { loadServices } from "./services.js";
 import { getServiceDetails } from "./status.js";
 import { isDockerAvailable, listContainersByProject, projectNameForFolder } from "./docker.js";
@@ -73,13 +73,6 @@ const ACTION_TIMEOUT_MS = 5 * 60 * 1000;
 const LOGS_TIMEOUT_MS = 15 * 1000;
 const DEFAULT_TAIL = 100;
 const MAX_TAIL = 5000;
-
-// Each action maps to a fixed `docker compose` argument array.
-const ACTIONS = {
-  start: ["up", "-d"],
-  stop: ["stop"],
-  restart: ["restart"],
-} as const;
 
 const ACTION_VERB = {
   start: "started",
@@ -192,7 +185,7 @@ const Schemas = {
       folder: z.string().min(1),
       port: z.number().int().min(1).max(65535),
       url: z.string().url(),
-      healthPath: z.string().url().optional(),
+      healthPath: z.string().trim().regex(/^\//, "Health path must start with /").max(512).optional(),
       icon: z.string().optional(),
     }).strict(),
   }),
@@ -272,8 +265,13 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 app.addHook("onRequest", async (req, reply) => {
   if (req.method === "OPTIONS") return;
   const origin = req.headers.origin;
-  // Same-origin proxy: any Origin header at all is foreign for mutating methods.
-  if (MUTATING_METHODS.has(req.method) && origin !== undefined && origin !== null) {
+  const allowedOrigins = new Set(["http://localhost:3001", "http://127.0.0.1:3001"]);
+  if (
+    MUTATING_METHODS.has(req.method) &&
+    origin !== undefined &&
+    origin !== null &&
+    !allowedOrigins.has(origin)
+  ) {
     return reply.code(403).send({ error: "Origin not allowed" });
   }
 });
@@ -340,11 +338,46 @@ app.post(
     else setIntentionalStop(service.id, false);
 
     try {
-      const { stdout, stderr } = await runCompose(
-        service,
-        [...ACTIONS[action as keyof typeof ACTIONS]],
-        ACTION_TIMEOUT_MS,
-      );
+      const command =
+        action === "start" ? service.startCommand : service.stopCommand;
+      if (!command) {
+        return reply.code(500).send({
+          id: service.id,
+          action,
+          ok: false,
+          error: `No ${action} command configured for ${service.name}`,
+        });
+      }
+
+      const commandArgs = command === "webui" ? [action] : [];
+      const outputs: string[] = [];
+      if (action === "restart") {
+        const stopCommand = service.stopCommand;
+        const startCommand = service.startCommand;
+        if (!stopCommand || !startCommand) {
+          return reply.code(500).send({
+            id: service.id,
+            action,
+            ok: false,
+            error: `Restart commands are not configured for ${service.name}`,
+          });
+        }
+        const stopped = await runOperatorCommand(
+          stopCommand,
+          stopCommand === "webui" ? ["stop"] : [],
+          ACTION_TIMEOUT_MS,
+        );
+        outputs.push(stopped.stdout, stopped.stderr);
+        const started = await runOperatorCommand(
+          startCommand,
+          startCommand === "webui" ? ["start"] : [],
+          ACTION_TIMEOUT_MS,
+        );
+        outputs.push(started.stdout, started.stderr);
+      } else {
+        const result = await runOperatorCommand(command, commandArgs, ACTION_TIMEOUT_MS);
+        outputs.push(result.stdout, result.stderr);
+      }
 
       await recordActivity({
         kind: action,
@@ -354,7 +387,7 @@ app.post(
         // A failed activity write must not turn a successful Docker action into an error.
       });
 
-      return { id: service.id, action, ok: true, output: (stdout + stderr).trim() };
+      return { id: service.id, action, ok: true, output: outputs.join("").trim() };
     } catch (err) {
       if (action === "stop") setIntentionalStop(service.id, false);
       req.log.error(err);
@@ -862,7 +895,9 @@ app.get(
   },
 );
 
-app.post("/api/alerts/read", async (req, reply) => {
+app.post("/api/alerts/read", {
+  config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+}, async (req, reply) => {
   try {
     const count = await markAllAlertsRead();
     return { ok: true, count };
@@ -947,8 +982,26 @@ app.post(
         folder: z.string().min(1),
         port: z.number().int().min(1).max(65535),
         url: z.string().url(),
-        healthPath: z.string().url().optional(),
+        healthPath: z.string().trim().regex(/^\//, "Health path must start with /").max(512),
         icon: z.string().optional(),
+        startCommand: z.enum([
+          "jenkins-start",
+          "jenkins-stop",
+          "sonar-start",
+          "sonar-stop",
+          "mongo-start",
+          "mongo-stop",
+          "webui",
+        ]).optional(),
+        stopCommand: z.enum([
+          "jenkins-start",
+          "jenkins-stop",
+          "sonar-start",
+          "sonar-stop",
+          "mongo-start",
+          "mongo-stop",
+          "webui",
+        ]).optional(),
       }).strict(),
     },
     config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
@@ -973,8 +1026,26 @@ app.put("/api/registry/services/:id", {
       folder: z.string().min(1),
       port: z.number().int().min(1).max(65535),
       url: z.string().url(),
-      healthPath: z.string().url().optional(),
+      healthPath: z.string().trim().regex(/^\//, "Health path must start with /").max(512),
       icon: z.string().optional(),
+      startCommand: z.enum([
+        "jenkins-start",
+        "jenkins-stop",
+        "sonar-start",
+        "sonar-stop",
+        "mongo-start",
+        "mongo-stop",
+        "webui",
+      ]).optional(),
+      stopCommand: z.enum([
+        "jenkins-start",
+        "jenkins-stop",
+        "sonar-start",
+        "sonar-stop",
+        "mongo-start",
+        "mongo-stop",
+        "webui",
+      ]).optional(),
     }).strict(),
   },
   config: { rateLimit: { max: 30, timeWindow: "1 minute" } },

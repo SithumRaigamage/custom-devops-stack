@@ -570,6 +570,8 @@ export interface RegistryService {
   health: string;
   port?: number;
   icon?: string;
+  startCommand?: string;
+  stopCommand?: string;
 }
 
 export interface RegistryFolder {
@@ -588,6 +590,8 @@ export interface ServiceInput {
   url: string;
   healthPath: string;
   icon?: string;
+  startCommand?: string;
+  stopCommand?: string;
 }
 
 export async function fetchRegistryServices(

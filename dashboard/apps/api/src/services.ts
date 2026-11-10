@@ -11,6 +11,8 @@ export interface Service {
   composeFile: string;
   url: string;
   health: string;
+  startCommand?: string;
+  stopCommand?: string;
   /** Published port, when managed through the registry API. */
   port?: number;
   /** Icon name the dashboard renders for this service. */
@@ -36,6 +38,12 @@ export function loadServices(path = process.env.SERVICES_FILE ?? defaultPath): S
     const service = entry as Service;
     if (typeof entry.desc !== "string") service.desc = "";
     if (typeof entry.image !== "string") service.image = "—";
+    if (typeof entry.startCommand !== "string" || entry.startCommand === "") {
+      service.startCommand = undefined;
+    }
+    if (typeof entry.stopCommand !== "string" || entry.stopCommand === "") {
+      service.stopCommand = undefined;
+    }
     return service;
   });
 }

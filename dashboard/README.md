@@ -5,6 +5,12 @@ memory of the Compose stacks listed in `services.yaml`, lets you start/stop/rest
 and read their logs, and keeps its own data (admin account, sessions, settings) in
 PostgreSQL.
 
+Service actions use the global operator commands from the workspace shell configuration
+(`jenkins-start`, `sonar-start`, and `webui start`, with matching stop commands). This
+preserves image loading, environment checks, and MongoDB handling defined by those
+commands. Restart runs stop followed by start. The dashboard's log viewer still reads
+Docker logs directly, and Open opens the configured service URL.
+
 - `apps/api` — Fastify + TypeScript API on `http://127.0.0.1:4000`
 - `apps/web` — Next.js 16 dashboard on `http://localhost:3001`
 - `docker-compose.yml` — PostgreSQL 16 for the dashboard API
@@ -83,12 +89,15 @@ Each entry points at a Compose folder, e.g.:
   composeFile: docker-compose.yml
   url: http://localhost:8080
   health: http://localhost:8080/login
+  startCommand: jenkins-start
+  stopCommand: jenkins-stop
 ```
 
 Adjust `folder`, `url` and `health` to your machine. The folder's basename must match
 the Compose project name (the `com.docker.compose.project` label on its containers) —
 `jenkins` above. The dashboard work runs without these stacks; they simply show as
-stopped. Start/stop/restart only accepts ids listed in this file.
+stopped. Start/stop/restart only accepts ids listed in this file. `startCommand` and
+`stopCommand` must be one of the allowlisted operator commands available in zsh.
 
 ### 5. Run the app
 

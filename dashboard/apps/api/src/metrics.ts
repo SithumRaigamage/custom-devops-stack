@@ -53,10 +53,10 @@ async function sampleRunningServices(services: Service[]): Promise<void> {
 
   const samples = await Promise.all(
     services.map(async (service) => {
-      const container = byProject.get(projectNameForFolder(service.folder))?.[0];
-      if (!container || container.State !== "running") return null;
+      const containers = byProject.get(projectNameForFolder(service.folder)) ?? [];
+      if (!containers.some((c) => c.State === "running")) return null;
 
-      const detail = await getServiceDetails(service, container);
+      const detail = await getServiceDetails(service, containers);
       if (detail.status === "stopped") return null;
 
       return {

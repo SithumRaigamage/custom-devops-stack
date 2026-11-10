@@ -150,7 +150,7 @@ export function startServiceMonitor(fallbackServices: Service[]): () => void {
       const byProject = await listContainersByProject();
       const details = await Promise.all(
         services.map((service) =>
-          getServiceDetails(service, byProject.get(projectNameForFolder(service.folder))?.[0]),
+          getServiceDetails(service, byProject.get(projectNameForFolder(service.folder))),
         ),
       );
 

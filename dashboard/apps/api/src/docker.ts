@@ -194,3 +194,17 @@ export async function readStats(container: Docker.Container): Promise<ContainerS
     return { cpuPct: 0, memBytes: 0, memPct: 0 };
   }
 }
+
+let hostCache: { cpus: number; memBytes: number } | null = null;
+
+/** Total CPUs and memory visible to the Docker engine (the VM on Docker Desktop). */
+export async function getHostResources(): Promise<{ cpus: number; memBytes: number }> {
+  if (hostCache) return hostCache;
+  try {
+    const info = await getDocker().info();
+    hostCache = { cpus: info.NCPU || 1, memBytes: info.MemTotal || 0 };
+    return hostCache;
+  } catch {
+    return { cpus: 1, memBytes: 0 };
+  }
+}

@@ -889,10 +889,13 @@ function ServiceDialog({
               type="url"
               value={form.healthUrl}
               onChange={(event) => update("healthUrl", event.target.value)}
-              placeholder="http://localhost:8080/health"
+              placeholder="http://localhost:8080/health or tcp://localhost:27017"
               className={INPUT_CLASS}
               required
             />
+            <span className="text-xs opacity-70">
+              Use a tcp://host:port URL for services without an HTTP endpoint (databases).
+            </span>
           </label>
 
           {form.type === "custom" && <div className="grid gap-4 sm:grid-cols-2">

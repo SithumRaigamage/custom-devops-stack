@@ -123,8 +123,8 @@ export function ServiceCard({
   const running = service.status !== "stopped";
   const busy = pendingStatus !== null;
 
-  const cpuPct = Math.round(service.cpuPct);
-  const memPct = Math.round(service.memPct);
+  const cpuPct = Math.round(service.cpuPct * 10) / 10;
+  const memPct = Math.round(service.memPct * 10) / 10;
 
   const startDisabled = busy || running;
   const stopDisabled = busy || service.status === "stopped";

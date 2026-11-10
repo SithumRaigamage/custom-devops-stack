@@ -134,7 +134,7 @@ const Schemas = {
   // --- Services ---
   serviceAction: z.object({
     params: z.object({ id: z.string(), action: z.enum(["start", "stop", "restart"]) }),
-    body: z.object({}).strict(),
+    body: z.object({}).strict().nullish(),
   }),
   serviceLogs: z.object({
     params: z.object({ id: z.string() }),
@@ -148,7 +148,7 @@ const Schemas = {
   }),
   jenkinsTrigger: z.object({
     params: z.object({ job: z.string() }),
-    body: z.object({}).strict(),
+    body: z.object({}).strict().nullish(),
   }),
 
   // --- Alerts ---
@@ -212,7 +212,7 @@ const Schemas = {
     body: z.object({ name: z.string().optional() }),
   }),
   dockerPrune: z.object({
-    body: z.object({}).strict(),
+    body: z.object({}).strict().nullish(),
   }),
 
   // --- Assistant read-only guard ---
@@ -337,7 +337,7 @@ app.get(
     const byProject = await listContainersByProject();
     return Promise.all(
       services.map((service) =>
-        getServiceDetails(service, byProject.get(projectNameForFolder(service.folder))?.[0]),
+        getServiceDetails(service, byProject.get(projectNameForFolder(service.folder))),
       ),
     );
   },
@@ -348,7 +348,7 @@ app.post(
   {
     schema: {
       params: z.object({ id: z.string(), action: z.enum(["start", "stop", "restart"]) }),
-      body: z.object({}).strict(),
+      body: z.object({}).strict().nullish(),
     },
     config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
   },
@@ -606,7 +606,7 @@ app.post(
   {
     schema: {
       params: z.object({ job: z.string() }),
-      body: z.object({}).strict(),
+      body: z.object({}).strict().nullish(),
     },
   },
   async (req, reply) => {
@@ -737,7 +737,7 @@ app.post(
   {
     schema: {
       params: z.object({ name: z.string() }),
-      body: z.object({}).strict(),
+      body: z.object({}).strict().nullish(),
     },
   },
   async (req, reply) => {
@@ -758,7 +758,7 @@ app.post(
   {
     schema: {
       params: z.object({ name: z.string() }),
-      body: z.object({}).strict(),
+      body: z.object({}).strict().nullish(),
     },
   },
   async (req, reply) => {
@@ -1165,7 +1165,7 @@ app.get("/api/docker/backups", { schema: { querystring: z.object({}).strict() } 
 app.post("/api/docker/backups/:serviceId", {
   schema: {
     params: z.object({ serviceId: z.string() }),
-    body: z.object({}).strict(),
+    body: z.object({}).strict().nullish(),
   },
 }, async (req, reply) => {
   try {
@@ -1202,7 +1202,7 @@ app.get("/api/docker/prune", { schema: { querystring: z.object({}).strict() } },
 
 app.post("/api/docker/prune", {
   schema: {
-    body: z.object({}).strict(),
+    body: z.object({}).strict().nullish(),
   },
 }, async (req, reply) => {
   if (!(await isDockerAvailable())) {

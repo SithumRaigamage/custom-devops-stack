@@ -4,6 +4,7 @@ import { z } from "zod";
 import { pool } from "./db.js";
 import { getSettings, resolveStackRoot, expandHome } from "./settings.js";
 import { refreshServices, type Service, type ServiceType } from "./services.js";
+import { checkHealth } from "./status.js";
 
 const COMPOSE_CANDIDATES = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"];
 const COMMAND_PATTERN = /^[a-zA-Z0-9_./:@%+=,-]+(?:\s+[a-zA-Z0-9_./:@%+=,-]+)*$/;
@@ -222,12 +223,6 @@ export async function testService(input: unknown): Promise<{ folder: boolean; co
   const data = parsed.data;
   const folder = resolveFolder(await root(), data.folder);
   const composeFile = data.type === "compose" && existsSync(join(folder.absolute, data.composeFile));
-  let health = false;
-  try {
-    const response = await fetch(healthUrl(data), { signal: AbortSignal.timeout(3000) });
-    health = response.ok;
-  } catch {
-    health = false;
-  }
+  const health = (await checkHealth(healthUrl(data))).ok;
   return { folder: true, composeFile: data.type === "custom" ? true : composeFile, health };
 }

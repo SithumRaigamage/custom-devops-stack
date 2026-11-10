@@ -111,9 +111,11 @@ function signature(detail: ServiceDetail): string {
 }
 
 /** Poll Docker in the background so status changes are recorded even with no browser open. */
-export function startServiceMonitor(fallbackServices: Service[]): void {
+export function startServiceMonitor(fallbackServices: Service[]): () => void {
   const previous = new Map<string, string>();
   let ticking = false;
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
 
   async function tick(): Promise<void> {
     if (ticking) return;
@@ -195,8 +197,12 @@ export function startServiceMonitor(fallbackServices: Service[]): void {
   }
 
   const schedule = () => {
+    if (stopped) return;
     void pollSeconds().then((seconds) => {
-      setTimeout(async () => {
+      if (stopped) return;
+      timer = setTimeout(async () => {
+        timer = null;
+        if (stopped) return;
         await tick();
         schedule();
       }, seconds * 1000);
@@ -204,4 +210,9 @@ export function startServiceMonitor(fallbackServices: Service[]): void {
   };
 
   schedule();
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
 }

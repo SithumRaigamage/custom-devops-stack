@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n api,web -c blue,green \"pnpm --filter api dev\" \"pnpm --filter web dev\""
+    "dev": "concurrently --kill-others-on-fail --kill-timeout 10000 -n api,web -c blue,green \"pnpm --filter api dev\" \"pnpm --filter web dev\""
   },
   "devDependencies": {
     "concurrently": "^9.0.0"

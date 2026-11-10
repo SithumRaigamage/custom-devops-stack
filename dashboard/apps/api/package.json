@@ -4,13 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "exec tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@fastify/cors": "^11.4.1",
+    "@fastify/helmet": "^13.0.1",
     "@fastify/rate-limit": "^11.2.2",
     "argon2": "^0.45.2",
     "dockerode": "^5.0.1",

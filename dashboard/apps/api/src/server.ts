@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import Fastify, { type FastifyReply } from "fastify";
-import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
+import { z } from "zod";
 import { runCompose, serviceCwd } from "./compose.js";
 import { loadServices } from "./services.js";
 import { getServiceDetails } from "./status.js";
@@ -63,10 +64,10 @@ import {
   readDiskUsage,
   restoreImageBackup,
 } from "./housekeeping.js";
+import { pool } from "./db.js";
 
 const HOST = "127.0.0.1";
 const PORT = 4000;
-const ALLOWED_ORIGIN = "http://localhost:3001";
 
 const ACTION_TIMEOUT_MS = 5 * 60 * 1000;
 const LOGS_TIMEOUT_MS = 15 * 1000;
@@ -86,6 +87,131 @@ const ACTION_VERB = {
   restart: "restarted",
 } as const;
 
+// Rate-limit tiers per requirement.
+const RATE_LIMIT = {
+  login: { max: 5, windowMs: 60_000 },
+  actions: { max: 30, windowMs: 60_000 },
+  assistant: { max: 10, windowMs: 60_000 },
+} as const;
+
+// Secret patterns to redact from pino logs.
+const SECRET_PATTERNS = [
+  /discordWebhookUrl/i,
+  /telegramBotToken/i,
+  /JENKINS_API_TOKEN/i,
+  /SONAR_TOKEN/i,
+  /SESSION_SECRET/i,
+  /DATABASE_URL/i,
+];
+
+function redactSecrets(value: unknown): unknown {
+  if (typeof value !== "object" || value === null) return value;
+  const obj = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (SECRET_PATTERNS.some((p) => p.test(key))) {
+      out[key] = "[REDACTED]";
+    } else if (typeof val === "object" && val !== null) {
+      out[key] = redactSecrets(val);
+    } else {
+      out[key] = val;
+    }
+  }
+  return out;
+}
+
+// Zod schemas for every route's params/query/body — strict rejects unknown keys.
+const Schemas = {
+  // --- Services ---
+  serviceAction: z.object({
+    params: z.object({ id: z.string(), action: z.enum(["start", "stop", "restart"]) }),
+    body: z.object({}).strict(),
+  }),
+  serviceLogs: z.object({
+    params: z.object({ id: z.string() }),
+    query: z.object({ tail: z.string().optional() }).strict(),
+  }),
+
+  // --- Jenkins ---
+  jenkinsBuild: z.object({
+    params: z.object({ job: z.string() }),
+    query: z.object({ tail: z.string().optional() }).strict(),
+  }),
+  jenkinsTrigger: z.object({
+    params: z.object({ job: z.string() }),
+    body: z.object({}).strict(),
+  }),
+
+  // --- Alerts ---
+  alertRead: z.object({
+    params: z.object({ id: z.string() }),
+  }),
+
+  // --- Settings ---
+  settingsPatch: z.object({
+    body: z.object({
+      stackRoot: z.string().optional(),
+      healthCheckIntervalSeconds: z.number().optional(),
+      theme: z.string().optional(),
+      mode: z.enum(["light", "dark"]).optional(),
+      notifications: z.object({
+        desktop: z.boolean().optional(),
+        confirmStopAll: z.boolean().optional(),
+        autoRefresh: z.boolean().optional(),
+        rules: z.object({
+          serviceStopped: z.boolean().optional(),
+          serviceUnhealthy: z.boolean().optional(),
+          jenkinsFailed: z.boolean().optional(),
+          sonarGateFailed: z.boolean().optional(),
+          ollamaUnreachable: z.boolean().optional(),
+        }).optional(),
+        discordWebhookUrl: z.string().trim().max(2048).optional(),
+        telegramBotToken: z.string().trim().max(512).optional(),
+        telegramChatId: z.string().trim().max(128).optional(),
+      }).refine((v) => Object.keys(v).length > 0 || Object.keys(v).length === 0, {
+        message: "No notification settings provided",
+      }),
+    }).strict(),
+  }),
+
+  // --- Assistant ---
+  assistantChat: z.object({
+    body: z.object({
+      message: z.string().min(1).max(8000),
+      model: z.string().optional(),
+    }).strict(),
+  }),
+
+  // --- Registry ---
+  registryServiceCreate: z.object({
+    body: z.object({
+      id: z.string().optional(),
+      name: z.string().min(1),
+      desc: z.string().optional(),
+      image: z.string().url().optional(),
+      folder: z.string().min(1),
+      port: z.number().int().min(1).max(65535),
+      url: z.string().url(),
+      healthPath: z.string().url().optional(),
+      icon: z.string().optional(),
+    }).strict(),
+  }),
+
+  // --- Docker ---
+  dockerRestoreBackup: z.object({
+    params: z.object({ serviceId: z.string() }),
+    body: z.object({ name: z.string().optional() }),
+  }),
+  dockerPrune: z.object({
+    body: z.object({}).strict(),
+  }),
+
+  // --- Assistant read-only guard ---
+  assistantGuard: z.object({
+    params: z.object({}).strict(),
+  }),
+} as const;
+
 function parseTail(raw: string | undefined): number | null {
   const value = raw ?? String(DEFAULT_TAIL);
   if (!/^\d+$/.test(value)) return null;
@@ -97,10 +223,47 @@ function parseTail(raw: string | undefined): number | null {
 // so registry edits take effect immediately.
 const initialServices = loadServices();
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: {
+    redact: {
+      paths: SECRET_PATTERNS.map((p) => p.source),
+      censor: "[REDACTED]",
+    },
+  },
+});
 
-await app.register(cors, { origin: ALLOWED_ORIGIN });
+app.setValidatorCompiler(({ schema }) => {
+  const validator = schema as {
+    safeParse?: (value: unknown) => {
+      success: boolean;
+      data?: unknown;
+      error?: unknown;
+    };
+  };
+
+  return (data: unknown): boolean | { value: unknown } | { error: Error } => {
+    if (typeof validator.safeParse !== "function") return true;
+    const result = validator.safeParse(data);
+    return result.success
+      ? { value: result.data }
+      : { error: result.error instanceof Error ? result.error : new Error("Validation failed") };
+  };
+});
+
+await app.register(helmet, {
+  contentSecurityPolicy: false,
+  frameguard: { action: "deny" },
+  hidePoweredBy: true,
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+  noSniff: true,
+  referrerPolicy: { policy: "no-referrer" },
+});
+
 await app.register(rateLimit, { global: false });
+
+// Rate-limit tiers applied via per-route `config.rateLimit`:
+// login 5/min (on /api/auth/login in auth.ts), actions 30/min (mutating routes),
+// assistant 10/min (/api/assistant/chat).
 
 // State-changing requests are simple cross-site POSTs a browser sends without a
 // preflight, so refuse any that carry a foreign Origin header. PUT/DELETE/PATCH
@@ -109,7 +272,8 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 app.addHook("onRequest", async (req, reply) => {
   if (req.method === "OPTIONS") return;
   const origin = req.headers.origin;
-  if (MUTATING_METHODS.has(req.method) && origin !== undefined && origin !== ALLOWED_ORIGIN) {
+  // Same-origin proxy: any Origin header at all is foreign for mutating methods.
+  if (MUTATING_METHODS.has(req.method) && origin !== undefined && origin !== null) {
     return reply.code(403).send({ error: "Origin not allowed" });
   }
 });
@@ -132,30 +296,42 @@ app.addHook("onRequest", async (req, reply) => {
   }
 });
 
-app.get("/api/services", async (_req, reply) => {
-  if (!(await isDockerAvailable())) {
-    return reply.code(503).send({ error: "docker_unavailable" });
-  }
+app.get(
+  "/api/services",
+  {
+    schema: {
+      querystring: z.object({}).strict(),
+    },
+  },
+  async (_req, reply) => {
+    if (!(await isDockerAvailable())) {
+      return reply.code(503).send({ error: "docker_unavailable" });
+    }
 
-  const services = loadServices();
-  const byProject = await listContainersByProject();
-  return Promise.all(
-    services.map((service) =>
-      getServiceDetails(service, byProject.get(projectNameForFolder(service.folder))?.[0]),
-    ),
-  );
-});
+    const services = loadServices();
+    const byProject = await listContainersByProject();
+    return Promise.all(
+      services.map((service) =>
+        getServiceDetails(service, byProject.get(projectNameForFolder(service.folder))?.[0]),
+      ),
+    );
+  },
+);
 
-app.post<{ Params: { id: string; action: string } }>(
+app.post(
   "/api/services/:id/:action",
+  {
+    schema: {
+      params: z.object({ id: z.string(), action: z.enum(["start", "stop", "restart"]) }),
+      body: z.object({}).strict(),
+    },
+    config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+  },
   async (req, reply) => {
     const service = loadServices().find((entry) => entry.id === req.params.id);
     if (!service) return reply.code(404).send({ error: `Unknown service "${req.params.id}"` });
 
     const action = req.params.action;
-    if (!Object.hasOwn(ACTIONS, action)) {
-      return reply.code(404).send({ error: `Unknown action "${action}"` });
-    }
 
     const user = await getSessionUser(req);
 
@@ -190,8 +366,14 @@ app.post<{ Params: { id: string; action: string } }>(
   },
 );
 
-app.get<{ Params: { id: string }; Querystring: { tail?: string } }>(
+app.get(
   "/api/services/:id/logs",
+  {
+    schema: {
+      params: z.object({ id: z.string() }),
+      querystring: z.object({ tail: z.string().optional() }).strict(),
+    },
+  },
   async (req, reply) => {
     const service = loadServices().find((entry) => entry.id === req.params.id);
     if (!service) return reply.code(404).send({ error: `Unknown service "${req.params.id}"` });
@@ -218,8 +400,14 @@ app.get<{ Params: { id: string }; Querystring: { tail?: string } }>(
 
 // Follow new log lines over SSE. The initial tail is fetched by the drawer; this
 // stream only carries lines written after it connects.
-app.get<{ Params: { id: string }; Querystring: { tail?: string } }>(
+app.get(
   "/api/services/:id/logs/stream",
+  {
+    schema: {
+      params: z.object({ id: z.string() }),
+      querystring: z.object({ tail: z.string().optional() }).strict(),
+    },
+  },
   async (req, reply) => {
     const service = loadServices().find((entry) => entry.id === req.params.id);
     if (!service) return reply.code(404).send({ error: `Unknown service "${req.params.id}"` });
@@ -290,57 +478,88 @@ app.get<{ Params: { id: string }; Querystring: { tail?: string } }>(
 
 // ---- Jenkins --------------------------------------------------------------
 
-app.get("/api/jenkins/builds", async (req, reply) => {
-  if (!isJenkinsConfigured()) return { configured: false, builds: [] };
-  try {
-    return { configured: true, builds: await listJenkinsBuilds() };
-  } catch (err) {
-    req.log.error(err);
-    return reply.code(502).send({
-      error: err instanceof Error ? err.message : "Jenkins is unavailable",
-    });
-  }
-});
+app.get(
+  "/api/jenkins/builds",
+  {
+    schema: {
+      querystring: z.object({}).strict(),
+    },
+  },
+  async (req, reply) => {
+    if (!isJenkinsConfigured()) return { configured: false, builds: [] };
+    try {
+      return { configured: true, builds: await listJenkinsBuilds() };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "Jenkins is unavailable",
+      });
+    }
+  },
+);
 
-app.get("/api/jenkins/summary", async (req, reply) => {
-  if (!isJenkinsConfigured()) {
-    return {
-      configured: false,
-      successRate: 0,
-      averageDurationMs: 0,
-      running: 0,
-      failedToday: 0,
-    };
-  }
-  try {
-    return { configured: true, ...(await jenkinsSummary()) };
-  } catch (err) {
-    req.log.error(err);
-    return reply.code(502).send({
-      error: err instanceof Error ? err.message : "Jenkins is unavailable",
-    });
-  }
-});
+app.get(
+  "/api/jenkins/summary",
+  {
+    schema: {
+      querystring: z.object({}).strict(),
+    },
+  },
+  async (req, reply) => {
+    if (!isJenkinsConfigured()) {
+      return {
+        configured: false,
+        successRate: 0,
+        averageDurationMs: 0,
+        running: 0,
+        failedToday: 0,
+      };
+    }
+    try {
+      return { configured: true, ...(await jenkinsSummary()) };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "Jenkins is unavailable",
+      });
+    }
+  },
+);
 
-app.post<{ Params: { job: string } }>("/api/jenkins/jobs/:job/build", async (req, reply) => {
-  if (!isJenkinsConfigured()) {
-    return reply.code(400).send({ error: "Jenkins is not configured" });
-  }
-  if (!req.params.job) return reply.code(400).send({ error: "Job is required" });
+app.post(
+  "/api/jenkins/jobs/:job/build",
+  {
+    schema: {
+      params: z.object({ job: z.string() }),
+      body: z.object({}).strict(),
+    },
+  },
+  async (req, reply) => {
+    if (!isJenkinsConfigured()) {
+      return reply.code(400).send({ error: "Jenkins is not configured" });
+    }
+    if (!req.params.job) return reply.code(400).send({ error: "Job is required" });
 
-  try {
-    await triggerJenkinsBuild(req.params.job);
-    return { ok: true };
-  } catch (err) {
-    req.log.error(err);
-    return reply.code(502).send({
-      error: err instanceof Error ? err.message : "Could not trigger the Jenkins build",
-    });
-  }
-});
+    try {
+      await triggerJenkinsBuild(req.params.job);
+      return { ok: true };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "Could not trigger the Jenkins build",
+      });
+    }
+  },
+);
 
-app.get<{ Params: { job: string; num: string }; Querystring: { tail?: string } }>(
+app.get(
   "/api/jenkins/jobs/:job/:num/console",
+  {
+    schema: {
+      params: z.object({ job: z.string(), num: z.string() }),
+      querystring: z.object({ tail: z.string().optional() }).strict(),
+    },
+  },
   async (req, reply) => {
     if (!isJenkinsConfigured()) return { configured: false, lines: [] };
 
@@ -366,82 +585,157 @@ app.get<{ Params: { job: string; num: string }; Querystring: { tail?: string } }
 
 // ---- SonarQube ------------------------------------------------------------
 
-app.get("/api/sonar/projects", async (req, reply) => {
-  if (!isSonarConfigured()) return { configured: false, projects: [] };
-  try {
-    return { configured: true, projects: await listSonarProjects() };
-  } catch (err) {
-    req.log.error(err);
-    return reply.code(502).send({
-      error: err instanceof Error ? err.message : "SonarQube is unavailable",
-    });
-  }
-});
+app.get(
+  "/api/sonar/projects",
+  {
+    schema: {
+      querystring: z.object({}).strict(),
+    },
+  },
+  async (req, reply) => {
+    if (!isSonarConfigured()) return { configured: false, projects: [] };
+    try {
+      return { configured: true, projects: await listSonarProjects() };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "SonarQube is unavailable",
+      });
+    }
+  },
+);
 
-app.get<{ Params: { key: string } }>("/api/sonar/projects/:key", async (req, reply) => {
-  if (!isSonarConfigured()) return { configured: false, key: req.params.key };
-  try {
-    return { configured: true, ...(await sonarProject(req.params.key)) };
-  } catch (err) {
-    req.log.error(err);
-    return reply.code(502).send({
-      error: err instanceof Error ? err.message : "Could not read the SonarQube project",
-    });
-  }
-});
+app.get(
+  "/api/sonar/projects/:key",
+  {
+    schema: {
+      params: z.object({ key: z.string() }),
+    },
+  },
+  async (req, reply) => {
+    if (!isSonarConfigured()) return { configured: false, key: req.params.key };
+    try {
+      return { configured: true, ...(await sonarProject(req.params.key)) };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "Could not read the SonarQube project",
+      });
+    }
+  },
+);
 
 // ---- Ollama ---------------------------------------------------------------
 
-app.get("/api/ollama/status", async () => ollamaStatus());
+app.get(
+  "/api/ollama/status",
+  {
+    schema: {
+      querystring: z.object({}).strict(),
+    },
+  },
+  async () => ollamaStatus(),
+);
 
-app.get("/api/ollama/models", async () => ollamaModels());
+app.get(
+  "/api/ollama/models",
+  {
+    schema: {
+      querystring: z.object({}).strict(),
+    },
+  },
+  async () => ollamaModels(),
+);
 
-app.get("/api/ollama/running", async () => ollamaRunning());
+app.get(
+  "/api/ollama/running",
+  {
+    schema: {
+      querystring: z.object({}).strict(),
+    },
+  },
+  async () => ollamaRunning(),
+);
 
-app.post<{ Params: { name: string } }>("/api/ollama/models/:name/load", async (req, reply) => {
-  try {
-    await ollamaLoadModel(req.params.name);
-    return { ok: true };
-  } catch (err) {
-    req.log.error(err);
-    return reply.code(502).send({
-      error: err instanceof Error ? err.message : "Could not load the Ollama model",
-    });
-  }
-});
+app.post(
+  "/api/ollama/models/:name/load",
+  {
+    schema: {
+      params: z.object({ name: z.string() }),
+      body: z.object({}).strict(),
+    },
+  },
+  async (req, reply) => {
+    try {
+      await ollamaLoadModel(req.params.name);
+      return { ok: true };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "Could not load the Ollama model",
+      });
+    }
+  },
+);
 
-app.post<{ Params: { name: string } }>("/api/ollama/models/:name/unload", async (req, reply) => {
-  try {
-    await ollamaUnloadModel(req.params.name);
-    return { ok: true };
-  } catch (err) {
-    req.log.error(err);
-    return reply.code(502).send({
-      error: err instanceof Error ? err.message : "Could not unload the Ollama model",
-    });
-  }
-});
+app.post(
+  "/api/ollama/models/:name/unload",
+  {
+    schema: {
+      params: z.object({ name: z.string() }),
+      body: z.object({}).strict(),
+    },
+  },
+  async (req, reply) => {
+    try {
+      await ollamaUnloadModel(req.params.name);
+      return { ok: true };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "Could not unload the Ollama model",
+      });
+    }
+  },
+);
 
 // ---- Activity and assistant -----------------------------------------------
 
-app.get<{ Querystring: { limit?: string } }>("/api/activity", async (req, reply) => {
-  const raw = req.query.limit;
-  const limit = raw === undefined ? 50 : Number(raw);
+app.get(
+  "/api/activity",
+  {
+    schema: {
+      querystring: z.object({ limit: z.string().optional() }).strict(),
+    },
+  },
+  async (req, reply) => {
+    const raw = req.query.limit;
+    const limit = raw === undefined ? 50 : Number(raw);
 
-  if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
-    return reply.code(400).send({ error: "limit must be an integer from 1 to 200" });
-  }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+      return reply.code(400).send({ error: "limit must be an integer from 1 to 200" });
+    }
 
-  try {
-    return { activity: await listActivity(limit) };
-  } catch (err) {
-    req.log.error(err);
-    return reply.code(503).send({ error: "activity_unavailable" });
-  }
-});
+    try {
+      return { activity: await listActivity(limit) };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(503).send({ error: "activity_unavailable" });
+    }
+  },
+);
 
-app.post<{ Body: { message?: unknown; model?: unknown } }>(
+app.post(
   "/api/assistant/chat",
+  {
+    schema: {
+      body: z.object({
+        message: z.string().min(1).max(8000),
+        model: z.string().optional(),
+      }).strict(),
+    },
+    config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+  },
   async (req, reply) => {
     const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
     const model =
@@ -459,7 +753,7 @@ app.post<{ Body: { message?: unknown; model?: unknown } }>(
         {
           role: "system",
           content:
-            "You are StackPilot, a concise assistant for a local DevOps stack. Help with Docker Compose services, Jenkins builds, SonarQube quality gates, logs, and service health. Say when you do not have enough live data instead of inventing it.",
+            "You are StackPilot, a concise assistant for a local DevOps stack. Help with Docker Compose services, Jenkins builds, SonarQube quality gates, logs, and service health. Say when you do not have enough live data instead of inventing it. You are strictly read-only: never run commands, never trigger builds, never stop or start services.",
         },
         { role: "user", content: message },
       ]);
@@ -482,46 +776,91 @@ await authRoutes(app);
 
 // ---- Settings -------------------------------------------------------------
 
-app.get("/api/settings", async (req, reply) => {
-  try {
-    return publicSettings(await getSettings());
-  } catch (err) {
-    req.log.error(err);
-    return reply.code(503).send({ error: "settings_unavailable" });
-  }
-});
+app.get(
+  "/api/settings",
+  {
+    schema: {
+      querystring: z.object({}).strict(),
+    },
+  },
+  async (req, reply) => {
+    try {
+      return publicSettings(await getSettings());
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(503).send({ error: "settings_unavailable" });
+    }
+  },
+);
 
-app.put("/api/settings", async (req, reply) => {
-  const parsed = SettingsUpdateSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid settings" });
-  }
-
-  try {
-    return publicSettings(await updateSettings(parsed.data));
-  } catch (err) {
-    req.log.error(err);
-    return reply.code(503).send({ error: "settings_unavailable" });
-  }
-});
+app.put(
+  "/api/settings",
+  {
+    schema: {
+      body: z.object({
+        stackRoot: z.string().trim().min(1).max(1024).optional(),
+        healthCheckIntervalSeconds: z.number().int().min(2).max(300).optional(),
+        theme: z.string().trim().min(1).max(64).optional(),
+        mode: z.enum(["light", "dark"]).optional(),
+        notifications: z.object({
+          desktop: z.boolean().optional(),
+          confirmStopAll: z.boolean().optional(),
+          autoRefresh: z.boolean().optional(),
+          rules: z.object({
+            serviceStopped: z.boolean().optional(),
+            serviceUnhealthy: z.boolean().optional(),
+            jenkinsFailed: z.boolean().optional(),
+            sonarGateFailed: z.boolean().optional(),
+            ollamaUnreachable: z.boolean().optional(),
+          }).optional(),
+          discordWebhookUrl: z.string().trim().max(2048).refine((v) => v === "" || /^https?:\/\//i.test(v), {
+            message: "Discord webhook must be an http(s) URL",
+          }).optional(),
+          telegramBotToken: z.string().trim().max(512).optional(),
+          telegramChatId: z.string().trim().max(128).optional(),
+        }).refine((v) => Object.keys(v).length > 0, {
+          message: "No notification settings provided",
+        }).optional(),
+      }).refine((v) => Object.keys(v).length > 0, {
+        message: "No settings provided",
+      }),
+    },
+  },
+  async (req, reply) => {
+    try {
+      return publicSettings(await updateSettings(req.body));
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(503).send({ error: "settings_unavailable" });
+    }
+  },
+);
 
 // ---- Alerts ---------------------------------------------------------------
 
-app.get<{ Querystring: { limit?: string } }>("/api/alerts", async (req, reply) => {
-  const raw = req.query.limit;
-  const limit = raw === undefined ? 50 : Number(raw);
+app.get(
+  "/api/alerts",
+  {
+    schema: {
+      querystring: z.object({ limit: z.string().optional() }).strict(),
+    },
+  },
+  async (req, reply) => {
+    const raw = req.query.limit;
+    const limit = raw === undefined ? 50 : Number(raw);
 
-  if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
-    return reply.code(400).send({ error: "limit must be an integer from 1 to 200" });
-  }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+      return reply.code(400).send({ error: "limit must be an integer from 1 to 200" });
+    }
 
-  try {
-    return await listAlerts(limit);
-  } catch (err) {
-    req.log.error(err);
-    return reply.code(503).send({ error: "alerts_unavailable" });
-  }
-});
+    try {
+      return await listAlerts(limit);
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(503).send({ error: "alerts_unavailable" });
+    }
+  },
+);
 
 app.post("/api/alerts/read", async (req, reply) => {
   try {
@@ -533,21 +872,29 @@ app.post("/api/alerts/read", async (req, reply) => {
   }
 });
 
-app.post<{ Params: { id: string } }>("/api/alerts/:id/read", async (req, reply) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id < 1) {
-    return reply.code(400).send({ error: "Invalid alert id" });
-  }
+app.post<{ Params: { id: string } }>(
+  "/api/alerts/:id/read",
+  {
+    schema: {
+      params: z.object({ id: z.string() }),
+    },
+  },
+  async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) {
+      return reply.code(400).send({ error: "Invalid alert id" });
+    }
 
-  try {
-    const updated = await markAlertRead(id);
-    if (!updated) return reply.code(404).send({ error: `Unknown alert "${req.params.id}"` });
-    return { ok: true };
-  } catch (err) {
-    req.log.error(err);
-    return reply.code(503).send({ error: "alerts_unavailable" });
-  }
-});
+    try {
+      const updated = await markAlertRead(id);
+      if (!updated) return reply.code(404).send({ error: `Unknown alert "${req.params.id}"` });
+      return { ok: true };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(503).send({ error: "alerts_unavailable" });
+    }
+  },
+);
 
 app.post("/api/notifications/test", async (req, reply) => {
   try {
@@ -572,7 +919,7 @@ function sendRegistryError(reply: FastifyReply, err: unknown): FastifyReply {
   return reply.code(500).send({ error: "registry_error" });
 }
 
-app.get("/api/registry/services", async (_req, reply) => {
+app.get("/api/registry/services", { schema: { querystring: z.object({}).strict() } }, async (_req, reply) => {
   try {
     return await listRegistryServices();
   } catch (err) {
@@ -580,7 +927,7 @@ app.get("/api/registry/services", async (_req, reply) => {
   }
 });
 
-app.get("/api/registry/folders", async (_req, reply) => {
+app.get("/api/registry/folders", { schema: { querystring: z.object({}).strict() } }, async (_req, reply) => {
   try {
     return await listFolders();
   } catch (err) {
@@ -588,15 +935,50 @@ app.get("/api/registry/folders", async (_req, reply) => {
   }
 });
 
-app.post("/api/registry/services", async (req, reply) => {
-  try {
-    return reply.code(201).send(await createService(req.body));
-  } catch (err) {
-    return sendRegistryError(reply, err);
-  }
-});
+app.post(
+  "/api/registry/services",
+  {
+    schema: {
+      body: z.object({
+        id: z.string().optional(),
+        name: z.string().min(1),
+        desc: z.string().optional(),
+        image: z.string().url().optional(),
+        folder: z.string().min(1),
+        port: z.number().int().min(1).max(65535),
+        url: z.string().url(),
+        healthPath: z.string().url().optional(),
+        icon: z.string().optional(),
+      }).strict(),
+    },
+    config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+  },
+  async (req, reply) => {
+    try {
+      return reply.code(201).send(await createService(req.body));
+    } catch (err) {
+      return sendRegistryError(reply, err);
+    }
+  },
+);
 
-app.put<{ Params: { id: string } }>("/api/registry/services/:id", async (req, reply) => {
+app.put("/api/registry/services/:id", {
+  schema: {
+    params: z.object({ id: z.string() }),
+    body: z.object({
+      id: z.string().optional(),
+      name: z.string().min(1),
+      desc: z.string().optional(),
+      image: z.string().url().optional(),
+      folder: z.string().min(1),
+      port: z.number().int().min(1).max(65535),
+      url: z.string().url(),
+      healthPath: z.string().url().optional(),
+      icon: z.string().optional(),
+    }).strict(),
+  },
+  config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+}, async (req, reply) => {
   try {
     return await updateService(req.params.id, req.body);
   } catch (err) {
@@ -604,7 +986,11 @@ app.put<{ Params: { id: string } }>("/api/registry/services/:id", async (req, re
   }
 });
 
-app.delete<{ Params: { id: string } }>("/api/registry/services/:id", async (req, reply) => {
+app.delete("/api/registry/services/:id", {
+  schema: {
+    params: z.object({ id: z.string() }),
+  },
+}, async (req, reply) => {
   try {
     await deleteService(req.params.id);
     return { ok: true };
@@ -622,7 +1008,7 @@ function sendHousekeepingError(reply: FastifyReply, err: unknown): FastifyReply 
   return reply.code(500).send({ error: err instanceof Error ? err.message : "housekeeping_error" });
 }
 
-app.get("/api/docker/disk", async (req, reply) => {
+app.get("/api/docker/disk", { schema: { querystring: z.object({}).strict() } }, async (req, reply) => {
   if (!(await isDockerAvailable())) {
     return reply.code(503).send({ error: "docker_unavailable" });
   }
@@ -634,7 +1020,7 @@ app.get("/api/docker/disk", async (req, reply) => {
   }
 });
 
-app.get("/api/docker/backups", async (_req, reply) => {
+app.get("/api/docker/backups", { schema: { querystring: z.object({}).strict() } }, async (_req, reply) => {
   try {
     return await listDockerBackups();
   } catch (err) {
@@ -642,29 +1028,33 @@ app.get("/api/docker/backups", async (_req, reply) => {
   }
 });
 
-app.post<{ Params: { serviceId: string } }>(
-  "/api/docker/backups/:serviceId",
-  async (req, reply) => {
-    try {
-      return reply.code(201).send(await createImageBackup(req.params.serviceId));
-    } catch (err) {
-      return sendHousekeepingError(reply, err);
-    }
+app.post("/api/docker/backups/:serviceId", {
+  schema: {
+    params: z.object({ serviceId: z.string() }),
+    body: z.object({}).strict(),
   },
-);
+}, async (req, reply) => {
+  try {
+    return reply.code(201).send(await createImageBackup(req.params.serviceId));
+  } catch (err) {
+    return sendHousekeepingError(reply, err);
+  }
+});
 
-app.post<{ Params: { serviceId: string }; Body: { name?: unknown } }>(
-  "/api/docker/backups/:serviceId/restore",
-  async (req, reply) => {
-    try {
-      return await restoreImageBackup(req.params.serviceId, req.body?.name);
-    } catch (err) {
-      return sendHousekeepingError(reply, err);
-    }
+app.post("/api/docker/backups/:serviceId/restore", {
+  schema: {
+    params: z.object({ serviceId: z.string() }),
+    body: z.object({ name: z.string().optional() }),
   },
-);
+}, async (req, reply) => {
+  try {
+    return await restoreImageBackup(req.params.serviceId, req.body?.name);
+  } catch (err) {
+    return sendHousekeepingError(reply, err);
+  }
+});
 
-app.get("/api/docker/prune", async (req, reply) => {
+app.get("/api/docker/prune", { schema: { querystring: z.object({}).strict() } }, async (req, reply) => {
   if (!(await isDockerAvailable())) {
     return reply.code(503).send({ error: "docker_unavailable" });
   }
@@ -676,7 +1066,11 @@ app.get("/api/docker/prune", async (req, reply) => {
   }
 });
 
-app.post("/api/docker/prune", async (req, reply) => {
+app.post("/api/docker/prune", {
+  schema: {
+    body: z.object({}).strict(),
+  },
+}, async (req, reply) => {
   if (!(await isDockerAvailable())) {
     return reply.code(503).send({ error: "docker_unavailable" });
   }
@@ -690,7 +1084,11 @@ app.post("/api/docker/prune", async (req, reply) => {
 
 // ---- Metrics --------------------------------------------------------------
 
-app.get<{ Querystring: { range?: string } }>("/api/metrics", async (req, reply) => {
+app.get("/api/metrics", {
+  schema: {
+    querystring: z.object({ range: z.string().optional() }).strict(),
+  },
+}, async (req, reply) => {
   const range = parseMetricsRange(req.query.range);
   try {
     return await readMetricsRange(range);
@@ -702,7 +1100,7 @@ app.get<{ Querystring: { range?: string } }>("/api/metrics", async (req, reply) 
 
 // ---- Uptime and incidents -------------------------------------------------
 
-app.get("/api/uptime", async (req, reply) => {
+app.get("/api/uptime", { schema: { querystring: z.object({}).strict() } }, async (req, reply) => {
   try {
     return await readUptime();
   } catch (err) {
@@ -711,7 +1109,11 @@ app.get("/api/uptime", async (req, reply) => {
   }
 });
 
-app.get<{ Querystring: { limit?: string } }>("/api/incidents", async (req, reply) => {
+app.get("/api/incidents", {
+  schema: {
+    querystring: z.object({ limit: z.string().optional() }).strict(),
+  },
+}, async (req, reply) => {
   const raw = req.query.limit;
   const limit = raw === undefined ? 50 : Number(raw);
 
@@ -729,7 +1131,7 @@ app.get<{ Querystring: { limit?: string } }>("/api/incidents", async (req, reply
 
 // ---- Event stream ---------------------------------------------------------
 
-app.get("/api/events", async (req, reply) => {
+app.get("/api/events", { schema: { querystring: z.object({}).strict() } }, async (req, reply) => {
   reply.hijack();
   const res = reply.raw;
   res.writeHead(200, {
@@ -747,9 +1149,34 @@ app.get("/api/events", async (req, reply) => {
   return reply;
 });
 
-app.get("/api/health", async () => ({ ok: true }));
+app.get("/api/health", { schema: { querystring: z.object({}).strict() } }, async () => ({ ok: true }));
 
-startServiceMonitor(initialServices);
+const stopServiceMonitor = startServiceMonitor(initialServices);
 startMetricsSampler(initialServices);
+
+let shuttingDown = false;
+
+async function shutdown(signal: NodeJS.Signals): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  app.log.info({ signal }, "Shutting down API");
+  stopServiceMonitor();
+
+  try {
+    await app.close();
+    await pool.end();
+    process.exitCode = 0;
+  } catch (error) {
+    app.log.error(error, "API shutdown failed");
+    process.exitCode = 1;
+  }
+}
+
+process.once("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+process.once("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
 
 await app.listen({ host: HOST, port: PORT });

@@ -364,3 +364,36 @@ export async function changePassword(
     body: JSON.stringify({ currentPassword, newPassword }),
   });
 }
+
+// --- Metrics ---
+
+export type MetricsRange = "1h" | "6h" | "24h";
+
+export interface MetricPoint {
+  ts: number;
+  cpuPct: number;
+  memPct: number;
+  memBytes: number;
+}
+
+export interface ServiceMetricSeries {
+  id: string;
+  name: string;
+  points: MetricPoint[];
+}
+
+export interface MetricsResponse {
+  range: MetricsRange;
+  from: number;
+  to: number;
+  points: MetricPoint[];
+  services: ServiceMetricSeries[];
+  latest: MetricPoint | null;
+}
+
+export async function fetchMetricsRange(
+  range: MetricsRange,
+  signal?: AbortSignal,
+): Promise<MetricsResponse> {
+  return requestJSON<MetricsResponse>(`/metrics?range=${range}`, { signal });
+}

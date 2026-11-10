@@ -2,7 +2,11 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { runCompose } from "./compose.js";
 import { loadServices } from "./services.js";
-import { getStatus } from "./status.js";
+import { getServiceDetails } from "./status.js";
+import { isDockerAvailable, listContainersByProject, projectNameForFolder } from "./docker.js";
+import { authRoutes } from "./auth.js";
+import { addEventClient, startServiceMonitor } from "./events.js";
+import { parseMetricsRange, readMetricsRange, startMetricsSampler } from "./metrics.js";
 
 const HOST = "127.0.0.1";
 const PORT = 4000;
@@ -36,9 +40,18 @@ app.addHook("onRequest", async (req, reply) => {
   }
 });
 
-app.get("/api/services", async () =>
-  Promise.all(services.map(async (service) => ({ ...service, status: await getStatus(service) }))),
-);
+app.get("/api/services", async (_req, reply) => {
+  if (!(await isDockerAvailable())) {
+    return reply.code(503).send({ error: "docker_unavailable" });
+  }
+
+  const byProject = await listContainersByProject();
+  return Promise.all(
+    services.map((service) =>
+      getServiceDetails(service, byProject.get(projectNameForFolder(service.folder))?.[0]),
+    ),
+  );
+});
 
 app.post<{ Params: { id: string; action: string } }>(
   "/api/services/:id/:action",
@@ -94,5 +107,44 @@ app.get<{ Params: { id: string }; Querystring: { tail?: string } }>(
     }
   },
 );
+
+// Auth routes
+await authRoutes(app);
+
+// CPU / memory time series, 1h | 6h | 24h (downsampled to 120 points).
+app.get<{ Querystring: { range?: string } }>("/api/metrics", async (req, reply) => {
+  const range = parseMetricsRange(req.query.range);
+  try {
+    return await readMetricsRange(range);
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(503).send({ error: "metrics_unavailable" });
+  }
+});
+
+// Activity SSE endpoint
+app.get("/api/events", async (_req, reply) => {
+  reply.hijack();
+  const res = reply.raw;
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.write(": connected\n\n");
+
+  const remove = addEventClient(res);
+  _req.raw.on("close", remove);
+  _req.raw.on("error", remove);
+
+  return reply;
+});
+
+// Health check
+app.get("/api/health", async () => ({ ok: true }));
+
+startServiceMonitor(services);
+startMetricsSampler(services);
 
 await app.listen({ host: HOST, port: PORT });

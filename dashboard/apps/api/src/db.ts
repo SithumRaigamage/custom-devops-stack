@@ -86,9 +86,9 @@ export const activity = pgTable("activity", {
 // metrics – time-series for CPU / memory per service
 export const metrics = pgTable("metrics", {
   ts: bigint("ts", { mode: "number" }).notNull(),
-  service_id: integer("service_id")
-    .notNull()
-    .references(() => services.id),
+  service_id: integer("service_id").references(() => services.id),
+  service_key: text("service_key").notNull(),
+  service_name: text("service_name").notNull(),
   cpu: real("cpu").notNull(),
   mem_bytes: real("mem_bytes").notNull(),
   mem_pct: real("mem_pct").notNull(),

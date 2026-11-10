@@ -1,37 +1,73 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { useOllamaStatus, useOllamaModels, useOllamaRunning } from "@/lib/use-ollama";
 import { ollamaLoadModel, ollamaUnloadModel } from "@/lib/api";
 
 const BUTTON =
-  "inline-flex h-[38px] items-center rounded-[8px] px-3 text-[13px] font-semibold";
+  "inline-flex h-[38px] items-center rounded-[8px] px-3 text-[13px] font-semibold disabled:opacity-60";
 const PRIMARY = `${BUTTON} border border-brand bg-brand text-brand-foreground`;
 const GHOST = `${BUTTON} border border-border2 bg-card2 text-fg2`;
 
-export default function OllamaPage() {
-  const [loadedModel, setLoadedModel] = useState<string | null>(null);
-  const { data: status, isLoading: statusLoading } = useOllamaStatus();
-  const { data: models, isLoading: modelsLoading } = useOllamaModels();
-  const { data: runningModels, isLoading: runningLoading } = useOllamaRunning();
+function formatSize(size: number | string): string {
+  const bytes = typeof size === "number" ? size : Number(size);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "—";
 
-  // Fetch data on mount
-  useEffect(() => {
-    // Already fetched by hooks, but ensure initial load
-  }, []);
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  return `${value >= 100 ? Math.round(value) : Math.round(value * 10) / 10} ${units[unit]}`;
+}
+
+export default function OllamaPage() {
+  const [pending, setPending] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const statusQuery = useOllamaStatus();
+  const modelsQuery = useOllamaModels();
+  const runningQuery = useOllamaRunning();
+
+  const models = modelsQuery.data ?? [];
+  const runningModels = runningQuery.data ?? [];
+  const runningNames = new Set(runningModels.map((model) => model.name));
+
+  async function refresh() {
+    await Promise.all([
+      statusQuery.refetch(),
+      modelsQuery.refetch(),
+      runningQuery.refetch(),
+    ]);
+  }
 
   async function handleLoadModel(name: string) {
-    await ollamaLoadModel(name);
-    setLoadedModel(name);
-    // Refresh models after load
-    // The queries will refetch automatically or we can manually invalidate
+    setPending(name);
+    setActionError(null);
+    try {
+      await ollamaLoadModel(name);
+      await refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not load the model");
+    } finally {
+      setPending(null);
+    }
   }
 
   async function handleUnloadModel(name: string) {
-    await ollamaUnloadModel(name);
-    if (loadedModel === name) setLoadedModel(null);
-    // Refresh models after unload
+    setPending(name);
+    setActionError(null);
+    try {
+      await ollamaUnloadModel(name);
+      await refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Could not unload the model");
+    } finally {
+      setPending(null);
+    }
   }
 
   return (
@@ -45,19 +81,27 @@ export default function OllamaPage() {
         >
           <div className="flex flex-[1_1_260px] flex-col gap-1">
             <span className="text-[13px] text-muted-foreground">Endpoint</span>
-            <code className="text-[15px] text-foreground">{window.location.origin}/api/ollama/status</code>
+            <code className="text-[15px] text-foreground">/api/ollama/status</code>
           </div>
 
           <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-bg px-2.5 py-1 text-xs font-semibold text-ok">
-            <span className={status?.reachable ? "size-1.5 rounded-full bg-ok" : "size-1.5 rounded-full bg-muted"} />
-            {status?.reachable ? "Reachable" : "Not reachable"}
+            <span className={statusQuery.data?.reachable ? "size-1.5 rounded-full bg-ok" : "size-1.5 rounded-full bg-muted"} />
+            {statusQuery.data?.reachable ? "Reachable" : "Not reachable"}
           </span>
 
           <div className="flex flex-col gap-1">
             <span className="text-[13px] text-muted-foreground">Loaded in memory</span>
-            <span className="font-semibold">{loadedModel ?? "None"}</span>
+            <span className="font-semibold">
+              {runningNames.size > 0 ? [...runningNames].join(", ") : "None"}
+            </span>
           </div>
         </section>
+
+        {actionError && (
+          <p role="alert" className="m-0 rounded-[10px] border border-bad-bg bg-bad-bg px-3 py-2 text-[13px] text-bad">
+            {actionError}
+          </p>
+        )}
 
         <section
           aria-label="Models"
@@ -65,11 +109,18 @@ export default function OllamaPage() {
         >
           <h2 className="mb-2 text-base font-semibold text-foreground">Installed models</h2>
 
-          {models ? (
+          {modelsQuery.error ? (
+            <p className="m-0 text-sm text-bad">
+              Could not read Ollama models: {modelsQuery.error.message}
+            </p>
+          ) : modelsQuery.isPending ? (
+            <p className="m-0 text-muted-foreground">Loading models…</p>
+          ) : models.length === 0 ? (
+            <p className="m-0 text-muted-foreground">No models are installed.</p>
+          ) : (
             models.map((model) => {
-              if (!model) return null;
-
-              const loaded = loadedModel === model.name;
+              const loaded = runningNames.has(model.name);
+              const busy = pending === model.name;
 
               return (
                 <div
@@ -78,21 +129,21 @@ export default function OllamaPage() {
                 >
                   <div className="flex flex-[1_1_220px] flex-col gap-0.5">
                     <span className="font-mono text-sm font-medium text-foreground">{model.name}</span>
-                    <span className="text-xs text-muted-foreground">{model.size}</span>
+                    <span className="text-xs text-muted-foreground">{formatSize(model.size)}</span>
                   </div>
-                  <span className="min-w-16 text-[13px] text-fg2">{model.size}</span>
                   <button
                     type="button"
-                    onClick={() => handleLoadModel(model.name)}
+                    onClick={() =>
+                      void (loaded ? handleUnloadModel(model.name) : handleLoadModel(model.name))
+                    }
+                    disabled={busy}
                     className={loaded ? GHOST : PRIMARY}
                   >
-                    {loaded ? "Unload" : "Load"}
+                    {busy ? "Working…" : loaded ? "Unload" : "Load"}
                   </button>
                 </div>
               );
             })
-          ) : (
-            <p className="text-muted-foreground">Loading models...</p>
           )}
         </section>
 
@@ -102,11 +153,17 @@ export default function OllamaPage() {
         >
           <h2 className="mb-2 text-base font-semibold text-foreground">Running models</h2>
 
-          {runningModels ? (
+          {runningQuery.error ? (
+            <p className="m-0 text-sm text-bad">
+              Could not read running models: {runningQuery.error.message}
+            </p>
+          ) : runningQuery.isPending ? (
+            <p className="m-0 text-muted-foreground">Loading running models…</p>
+          ) : runningModels.length === 0 ? (
+            <p className="m-0 text-muted-foreground">No models are loaded.</p>
+          ) : (
             runningModels.map((model) => {
-              if (!model) return null;
-
-              const loaded = loadedModel === model.name;
+              const busy = pending === model.name;
 
               return (
                 <div
@@ -115,20 +172,20 @@ export default function OllamaPage() {
                 >
                   <div className="flex flex-[1_1_220px] flex-col gap-0.5">
                     <span className="font-mono text-sm font-medium text-foreground">{model.name}</span>
+                    <span className="text-xs text-muted-foreground">{formatSize(model.size)}</span>
                   </div>
                   <span className="min-w-16 text-[13px] text-fg2">Loaded</span>
                   <button
                     type="button"
-                    onClick={() => handleUnloadModel(model.name)}
-                    className={loaded ? GHOST : PRIMARY}
+                    onClick={() => void handleUnloadModel(model.name)}
+                    disabled={busy}
+                    className={GHOST}
                   >
-                    {loaded ? "Unload" : "Load"}
+                    {busy ? "Working…" : "Unload"}
                   </button>
                 </div>
               );
             })
-          ) : (
-            <p className="text-muted-foreground">Loading running models...</p>
           )}
         </section>
       </div>

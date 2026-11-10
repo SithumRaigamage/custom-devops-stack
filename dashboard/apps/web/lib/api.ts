@@ -110,7 +110,7 @@ export async function fetchServices(signal?: AbortSignal): Promise<Service[]> {
 }
 
 export async function runServiceAction(id: string, action: ServiceAction): Promise<void> {
-  await apiFetch(`/services/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+  await requestJSON(`/services/${encodeURIComponent(id)}/${action}`, { method: "POST" });
 }
 
 export async function fetchServiceLogs(
@@ -284,7 +284,7 @@ export interface SonarProjectDetail {
 
 export interface OllamaModel {
   name: string;
-  size: string;
+  size: number;
   parameter_size?: string;
   quantization_level?: string;
   modified_at?: string;

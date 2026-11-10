@@ -1,12 +1,35 @@
+import { spawn } from "node:child_process";
 import Fastify, { type FastifyReply } from "fastify";
 import cors from "@fastify/cors";
-import { runCompose } from "./compose.js";
+import rateLimit from "@fastify/rate-limit";
+import { runCompose, serviceCwd } from "./compose.js";
 import { loadServices } from "./services.js";
 import { getServiceDetails } from "./status.js";
 import { isDockerAvailable, listContainersByProject, projectNameForFolder } from "./docker.js";
-import { authRoutes } from "./auth.js";
-import { startServiceMonitor } from "./events.js";
+import { authRoutes, getSessionUser } from "./auth.js";
+import { listActivity, recordActivity, startServiceMonitor } from "./events.js";
 import { addEventClient } from "./sse.js";
+import { parseLogLine, parseLogText } from "./logs.js";
+import {
+  isJenkinsConfigured,
+  jenkinsConsole,
+  jenkinsSummary,
+  listJenkinsBuilds,
+  triggerJenkinsBuild,
+} from "./jenkins.js";
+import {
+  isSonarConfigured,
+  listSonarProjects,
+  sonarProject,
+} from "./sonar.js";
+import {
+  ollamaChat,
+  ollamaLoadModel,
+  ollamaModels,
+  ollamaRunning,
+  ollamaStatus,
+  ollamaUnloadModel,
+} from "./ollama.js";
 import {
   listAlerts,
   markAlertRead,
@@ -57,6 +80,19 @@ const ACTIONS = {
   restart: ["restart"],
 } as const;
 
+const ACTION_VERB = {
+  start: "started",
+  stop: "stopped",
+  restart: "restarted",
+} as const;
+
+function parseTail(raw: string | undefined): number | null {
+  const value = raw ?? String(DEFAULT_TAIL);
+  if (!/^\d+$/.test(value)) return null;
+  const tail = Number(value);
+  return Number.isInteger(tail) && tail >= 1 && tail <= MAX_TAIL ? tail : null;
+}
+
 // Background monitors keep this snapshot; request handling re-reads services.yaml
 // so registry edits take effect immediately.
 const initialServices = loadServices();
@@ -64,13 +100,35 @@ const initialServices = loadServices();
 const app = Fastify({ logger: true });
 
 await app.register(cors, { origin: ALLOWED_ORIGIN });
+await app.register(rateLimit, { global: false });
 
 // State-changing requests are simple cross-site POSTs a browser sends without a
-// preflight, so refuse any that carry a foreign Origin header.
+// preflight, so refuse any that carry a foreign Origin header. PUT/DELETE/PATCH
+// are just as reachable cross-site and must be covered too.
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 app.addHook("onRequest", async (req, reply) => {
+  if (req.method === "OPTIONS") return;
   const origin = req.headers.origin;
-  if (req.method === "POST" && origin !== undefined && origin !== ALLOWED_ORIGIN) {
+  if (MUTATING_METHODS.has(req.method) && origin !== undefined && origin !== ALLOWED_ORIGIN) {
     return reply.code(403).send({ error: "Origin not allowed" });
+  }
+});
+
+// Every API route except the auth handshake and health probe needs a session.
+// The browser reaches the API through the Next.js same-origin rewrite, so the
+// HttpOnly session cookie is forwarded automatically.
+app.addHook("onRequest", async (req, reply) => {
+  if (req.method === "OPTIONS") return;
+  const path = req.url.split("?")[0] ?? "";
+  if (path.startsWith("/api/auth/") || path === "/api/health") return;
+
+  try {
+    if (!(await getSessionUser(req))) {
+      return reply.code(401).send({ error: "Unauthenticated" });
+    }
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(503).send({ error: "auth_unavailable" });
   }
 });
 
@@ -99,6 +157,8 @@ app.post<{ Params: { id: string; action: string } }>(
       return reply.code(404).send({ error: `Unknown action "${action}"` });
     }
 
+    const user = await getSessionUser(req);
+
     // A stop the user asked for is not an incident; the next start/restart clears it.
     if (action === "stop") setIntentionalStop(service.id, true);
     else setIntentionalStop(service.id, false);
@@ -109,6 +169,15 @@ app.post<{ Params: { id: string; action: string } }>(
         [...ACTIONS[action as keyof typeof ACTIONS]],
         ACTION_TIMEOUT_MS,
       );
+
+      await recordActivity({
+        kind: action,
+        message: `${service.name} ${ACTION_VERB[action as keyof typeof ACTION_VERB]}`,
+        actor: user?.username ?? "user",
+      }).catch(() => {
+        // A failed activity write must not turn a successful Docker action into an error.
+      });
+
       return { id: service.id, action, ok: true, output: (stdout + stderr).trim() };
     } catch (err) {
       if (action === "stop") setIntentionalStop(service.id, false);
@@ -127,23 +196,283 @@ app.get<{ Params: { id: string }; Querystring: { tail?: string } }>(
     const service = loadServices().find((entry) => entry.id === req.params.id);
     if (!service) return reply.code(404).send({ error: `Unknown service "${req.params.id}"` });
 
-    const raw = req.query.tail ?? String(DEFAULT_TAIL);
-    const tail = /^\d+$/.test(raw) ? Number(raw) : NaN;
-    if (!Number.isInteger(tail) || tail < 1 || tail > MAX_TAIL) {
+    const tail = parseTail(req.query.tail);
+    if (tail === null) {
       return reply.code(400).send({ error: `tail must be an integer from 1 to ${MAX_TAIL}` });
     }
 
     try {
       const { stdout, stderr } = await runCompose(
         service,
-        ["logs", "--no-color", "--tail", String(tail)],
+        ["logs", "--no-color", "--no-log-prefix", "--timestamps", "--tail", String(tail)],
         LOGS_TIMEOUT_MS,
       );
-      return { id: service.id, tail, logs: stdout + stderr };
+      return { id: service.id, tail, lines: parseLogText(stdout + stderr) };
     } catch (err) {
       req.log.error(err);
       const detail = err as { stderr?: string; message: string };
       return reply.code(500).send({ error: (detail.stderr || detail.message).trim() });
+    }
+  },
+);
+
+// Follow new log lines over SSE. The initial tail is fetched by the drawer; this
+// stream only carries lines written after it connects.
+app.get<{ Params: { id: string }; Querystring: { tail?: string } }>(
+  "/api/services/:id/logs/stream",
+  async (req, reply) => {
+    const service = loadServices().find((entry) => entry.id === req.params.id);
+    if (!service) return reply.code(404).send({ error: `Unknown service "${req.params.id}"` });
+
+    const tail = parseTail(req.query.tail);
+    if (tail === null) {
+      return reply.code(400).send({ error: `tail must be an integer from 1 to ${MAX_TAIL}` });
+    }
+
+    reply.hijack();
+    const res = reply.raw;
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.write(": connected\n\n");
+
+    const child = spawn(
+      "docker",
+      [
+        "compose",
+        "logs",
+        "--no-color",
+        "--no-log-prefix",
+        "--timestamps",
+        "--tail",
+        String(tail),
+        "--follow",
+      ],
+      { cwd: serviceCwd(service) },
+    );
+
+    let buffer = "";
+    const send = (chunk: Buffer | string) => {
+      buffer += chunk.toString();
+      let newline = buffer.indexOf("\n");
+      while (newline !== -1) {
+        const line = buffer.slice(0, newline).replace(/\r$/, "");
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+        if (!line.trim() || res.writableEnded) continue;
+        res.write(`data: ${JSON.stringify(parseLogLine(line))}\n\n`);
+      }
+    };
+
+    child.stdout?.on("data", send);
+    child.stderr?.on("data", send);
+
+    const stop = () => {
+      if (!child.killed) child.kill("SIGTERM");
+    };
+
+    req.raw.on("close", stop);
+    req.raw.on("error", stop);
+    child.on("error", (err) => {
+      req.log.error(err);
+      if (!res.writableEnded) res.end();
+    });
+    child.on("close", () => {
+      if (!res.writableEnded) res.end();
+    });
+
+    return reply;
+  },
+);
+
+// ---- Jenkins --------------------------------------------------------------
+
+app.get("/api/jenkins/builds", async (req, reply) => {
+  if (!isJenkinsConfigured()) return { configured: false, builds: [] };
+  try {
+    return { configured: true, builds: await listJenkinsBuilds() };
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(502).send({
+      error: err instanceof Error ? err.message : "Jenkins is unavailable",
+    });
+  }
+});
+
+app.get("/api/jenkins/summary", async (req, reply) => {
+  if (!isJenkinsConfigured()) {
+    return {
+      configured: false,
+      successRate: 0,
+      averageDurationMs: 0,
+      running: 0,
+      failedToday: 0,
+    };
+  }
+  try {
+    return { configured: true, ...(await jenkinsSummary()) };
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(502).send({
+      error: err instanceof Error ? err.message : "Jenkins is unavailable",
+    });
+  }
+});
+
+app.post<{ Params: { job: string } }>("/api/jenkins/jobs/:job/build", async (req, reply) => {
+  if (!isJenkinsConfigured()) {
+    return reply.code(400).send({ error: "Jenkins is not configured" });
+  }
+  if (!req.params.job) return reply.code(400).send({ error: "Job is required" });
+
+  try {
+    await triggerJenkinsBuild(req.params.job);
+    return { ok: true };
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(502).send({
+      error: err instanceof Error ? err.message : "Could not trigger the Jenkins build",
+    });
+  }
+});
+
+app.get<{ Params: { job: string; num: string }; Querystring: { tail?: string } }>(
+  "/api/jenkins/jobs/:job/:num/console",
+  async (req, reply) => {
+    if (!isJenkinsConfigured()) return { configured: false, lines: [] };
+
+    const num = Number(req.params.num);
+    if (!Number.isInteger(num) || num < 1) {
+      return reply.code(400).send({ error: "Build number must be a positive integer" });
+    }
+    const tail = parseTail(req.query.tail);
+    if (tail === null) {
+      return reply.code(400).send({ error: `tail must be an integer from 1 to ${MAX_TAIL}` });
+    }
+
+    try {
+      return { configured: true, lines: await jenkinsConsole(req.params.job, num, tail) };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "Could not read the Jenkins console",
+      });
+    }
+  },
+);
+
+// ---- SonarQube ------------------------------------------------------------
+
+app.get("/api/sonar/projects", async (req, reply) => {
+  if (!isSonarConfigured()) return { configured: false, projects: [] };
+  try {
+    return { configured: true, projects: await listSonarProjects() };
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(502).send({
+      error: err instanceof Error ? err.message : "SonarQube is unavailable",
+    });
+  }
+});
+
+app.get<{ Params: { key: string } }>("/api/sonar/projects/:key", async (req, reply) => {
+  if (!isSonarConfigured()) return { configured: false, key: req.params.key };
+  try {
+    return { configured: true, ...(await sonarProject(req.params.key)) };
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(502).send({
+      error: err instanceof Error ? err.message : "Could not read the SonarQube project",
+    });
+  }
+});
+
+// ---- Ollama ---------------------------------------------------------------
+
+app.get("/api/ollama/status", async () => ollamaStatus());
+
+app.get("/api/ollama/models", async () => ollamaModels());
+
+app.get("/api/ollama/running", async () => ollamaRunning());
+
+app.post<{ Params: { name: string } }>("/api/ollama/models/:name/load", async (req, reply) => {
+  try {
+    await ollamaLoadModel(req.params.name);
+    return { ok: true };
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(502).send({
+      error: err instanceof Error ? err.message : "Could not load the Ollama model",
+    });
+  }
+});
+
+app.post<{ Params: { name: string } }>("/api/ollama/models/:name/unload", async (req, reply) => {
+  try {
+    await ollamaUnloadModel(req.params.name);
+    return { ok: true };
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(502).send({
+      error: err instanceof Error ? err.message : "Could not unload the Ollama model",
+    });
+  }
+});
+
+// ---- Activity and assistant -----------------------------------------------
+
+app.get<{ Querystring: { limit?: string } }>("/api/activity", async (req, reply) => {
+  const raw = req.query.limit;
+  const limit = raw === undefined ? 50 : Number(raw);
+
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+    return reply.code(400).send({ error: "limit must be an integer from 1 to 200" });
+  }
+
+  try {
+    return { activity: await listActivity(limit) };
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(503).send({ error: "activity_unavailable" });
+  }
+});
+
+app.post<{ Body: { message?: unknown; model?: unknown } }>(
+  "/api/assistant/chat",
+  async (req, reply) => {
+    const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+    const model =
+      typeof req.body?.model === "string" && req.body.model.trim()
+        ? req.body.model.trim()
+        : "gpt-oss:20b";
+
+    if (!message) return reply.code(400).send({ error: "Message is required" });
+    if (message.length > 8000) {
+      return reply.code(400).send({ error: "Message must be 8000 characters or fewer" });
+    }
+
+    try {
+      const answer = await ollamaChat(model, [
+        {
+          role: "system",
+          content:
+            "You are StackPilot, a concise assistant for a local DevOps stack. Help with Docker Compose services, Jenkins builds, SonarQube quality gates, logs, and service health. Say when you do not have enough live data instead of inventing it.",
+        },
+        { role: "user", content: message },
+      ]);
+
+      if (!answer) {
+        return reply.code(502).send({ error: "Ollama returned an empty response" });
+      }
+      return { reply: answer };
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "The assistant is unavailable",
+      });
     }
   },
 );

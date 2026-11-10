@@ -1,6 +1,6 @@
-import { activity, db } from "./db.js";
+import { activity, db, pool } from "./db.js";
 import { isDockerAvailable, listContainersByProject, projectNameForFolder } from "./docker.js";
-import type { Service } from "./services.js";
+import { loadServices, type Service } from "./services.js";
 import { getServiceDetails, type ServiceDetail, type Status } from "./status.js";
 import { getSettings } from "./settings.js";
 import { evaluateAlerts } from "./alerts.js";
@@ -50,6 +50,33 @@ export async function recordActivity(input: {
   return entry;
 }
 
+export async function listActivity(limit = 50): Promise<ActivityEntry[]> {
+  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 200);
+  const { rows } = await pool.query<{
+    id: number;
+    ts: string | number;
+    kind: string;
+    message: string;
+    actor: string;
+    service_id: number | null;
+  }>(
+    `SELECT id, ts, kind, message, actor, service_id
+       FROM activity
+      ORDER BY ts DESC
+      LIMIT $1`,
+    [safeLimit],
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    ts: Number(row.ts),
+    kind: row.kind,
+    message: row.message,
+    actor: row.actor,
+    serviceId: row.service_id,
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Background service monitor
 // ---------------------------------------------------------------------------
@@ -84,7 +111,7 @@ function signature(detail: ServiceDetail): string {
 }
 
 /** Poll Docker in the background so status changes are recorded even with no browser open. */
-export function startServiceMonitor(services: Service[]): void {
+export function startServiceMonitor(fallbackServices: Service[]): void {
   const previous = new Map<string, string>();
   let ticking = false;
 
@@ -93,6 +120,15 @@ export function startServiceMonitor(services: Service[]): void {
     ticking = true;
 
     try {
+      // Registry edits rewrite services.yaml; reload every tick so added and
+      // removed services are monitored without restarting the API.
+      let services = fallbackServices;
+      try {
+        services = loadServices();
+      } catch {
+        // Keep the last usable snapshot if the file is being edited.
+      }
+
       if (!(await isDockerAvailable())) {
         // Docker being unavailable still counts as downtime for every service.
         await recordStatusSamples(

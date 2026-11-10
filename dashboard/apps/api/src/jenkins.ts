@@ -247,7 +247,8 @@ export async function jenkinsSummary(): Promise<JenkinsSummary> {
     const today = startOfToday();
 
     return {
-      successRate: builds.length > 0 ? Math.round((succeeded / builds.length) * 100) : 0,
+      successRate:
+        finished.length > 0 ? Math.round((succeeded / finished.length) * 100) : 0,
       averageDurationMs:
         finished.length > 0 ? Math.round(durationTotal / finished.length) : 0,
       running: builds.filter((build) => build.status === "running").length,

@@ -1,41 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Send, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
-import { useOllamaStatus, useOllamaModels, useOllamaRunning } from "@/lib/use-ollama";
-import { fetchOllamaStatus, fetchOllamaModels, fetchOllamaRunning } from "@/lib/api";
-import { useQuery } from "@tanstack/react-query";
+
+const MODEL = "gpt-oss:20b";
+const WELCOME =
+  "I'm StackPilot's assistant. Ask me about your Docker Compose services, Jenkins builds, SonarQube quality, or container logs.";
 
 export default function AssistantPage() {
-  const [messages, setMessages] = useState<
-    { role: "user" | "assistant"; content: string }[]
-  >([
-    {
-      role: "assistant",
-      content:
-        "I'm StackPilot's assistant. Ask me about your Docker Compose services, Jenkins builds, SonarQube quality, or container logs.",
-    },
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
+    { role: "assistant", content: WELCOME },
   ]);
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
-  const [conversations, setConversations] = useState<
-    { id: number; created_at: number }[]
-  >([]);
-  const [model, setModel] = useState("gpt-oss:20b");
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    void fetchConversations();
-  }, []);
-
-  async function fetchConversations() {
-    const res = await fetch("/api/assistant/conversations");
-    const data = await res.json();
-    setConversations(data.conversations ?? []);
-  }
-
-  function send() {
+  async function send() {
     const question = draft.trim();
     if (!question || thinking) return;
 
@@ -43,28 +23,45 @@ export default function AssistantPage() {
     setDraft("");
     setThinking(true);
 
-    // Send to the assistant API
-    fetch("/api/assistant/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-StackPilot": "1",
-      },
-      body: JSON.stringify({ message: question, model }),
-    }).then(() => {
+    try {
+      const res = await fetch("/api/assistant/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-StackPilot": "1",
+        },
+        body: JSON.stringify({ message: question, model: MODEL }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { reply?: unknown; error?: unknown };
+
+      if (!res.ok) {
+        throw new Error(
+          typeof body.error === "string" ? body.error : `API responded ${res.status}`,
+        );
+      }
+      if (typeof body.reply !== "string" || !body.reply.trim()) {
+        throw new Error("The assistant returned an empty response");
+      }
+      const reply = body.reply.trim();
+
+      setMessages((current) => [...current, { role: "assistant", content: reply }]);
+    } catch (err) {
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content: `I couldn't answer that: ${
+            err instanceof Error ? err.message : "the assistant is unavailable"
+          }`,
+        },
+      ]);
+    } finally {
       setThinking(false);
-    });
+    }
   }
 
   function newChat() {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setMessages([
-      {
-        role: "assistant",
-        content:
-          "I'm StackPilot's assistant. Ask me about your Docker Compose services, Jenkins builds, SonarQube quality, or container logs.",
-      },
-    ]);
+    setMessages([{ role: "assistant", content: WELCOME }]);
     setDraft("");
     setThinking(false);
   }
@@ -85,7 +82,7 @@ export default function AssistantPage() {
             <div className="flex flex-col">
               <span className="font-semibold">Stack Assistant</span>
               <span className="text-xs text-muted-foreground">
-                gpt-oss:20b via Ollama · reads Jenkins, SonarQube and container logs
+                {MODEL} via Ollama · reads Jenkins, SonarQube and container logs
               </span>
             </div>
           </div>
@@ -106,10 +103,7 @@ export default function AssistantPage() {
             const mine = message.role === "user";
 
             return (
-              <div
-                key={i}
-                className={mine ? "flex justify-end" : "flex justify-start"}
-              >
+              <div key={i} className={mine ? "flex justify-end" : "flex justify-start"}>
                 <div
                   className={
                     mine
@@ -125,9 +119,7 @@ export default function AssistantPage() {
 
           {thinking && (
             <div className="flex">
-              <div
-                className="animate-[dcpulse_1.2s_infinite] rounded-[14px] bg-card2 px-4 py-3 text-[13px] text-muted-foreground"
-              >
+              <div className="animate-[dcpulse_1.2s_infinite] rounded-[14px] bg-card2 px-4 py-3 text-[13px] text-muted-foreground">
                 Checking your stack…
               </div>
             </div>
@@ -148,7 +140,7 @@ export default function AssistantPage() {
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              send();
+              void send();
             }}
             className="flex gap-2.5"
           >
@@ -164,7 +156,8 @@ export default function AssistantPage() {
             <button
               type="submit"
               aria-label="Send"
-              className="grid size-[46px] place-items-center rounded-[10px] bg-brand text-brand-foreground"
+              disabled={thinking}
+              className="grid size-[46px] place-items-center rounded-[10px] bg-brand text-brand-foreground disabled:opacity-60"
             >
               <Send className="size-[18px]" strokeWidth={2.2} aria-hidden="true" />
             </button>

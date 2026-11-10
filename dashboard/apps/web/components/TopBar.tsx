@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, Check, KeyRound, LogOut, Moon, Play, Search, Square, Sun } from "lucide-react";
+import { Bell, Check, KeyRound, LoaderCircle, LogOut, Moon, Play, Search, Square, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { changePassword, fetchAuthStatus, logout } from "@/lib/api";
 import { relativeTime } from "@/lib/activity";
@@ -26,11 +26,12 @@ function initialsOf(name: string): string {
 }
 
 interface TopBarProps {
+  bulkAction?: "start" | "stop" | null;
   onStartAll?: () => void;
   onStopAll?: () => void;
 }
 
-export function TopBar({ onStartAll, onStopAll }: TopBarProps) {
+export function TopBar({ bulkAction = null, onStartAll, onStopAll }: TopBarProps) {
   const { dark, toggleMode } = useTheme();
   const { query, setQuery } = useSearch();
   const router = useRouter();
@@ -46,6 +47,7 @@ export function TopBar({ onStartAll, onStopAll }: TopBarProps) {
 
   const [open, setOpen] = useState<"theme" | "notifications" | "user" | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const themeRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
 
@@ -84,6 +86,7 @@ export function TopBar({ onStartAll, onStopAll }: TopBarProps) {
 
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
+      if (themeRef.current?.contains(target)) return;
       if (notificationsRef.current?.contains(target)) return;
       if (userRef.current?.contains(target)) return;
       setOpen(null);
@@ -196,24 +199,38 @@ export function TopBar({ onStartAll, onStopAll }: TopBarProps) {
         <button
           type="button"
           onClick={onStartAll}
-          className="inline-flex h-[42px] items-center gap-2 rounded-[10px] border border-brand bg-brand px-4 text-[13px] font-bold text-brand-foreground"
+          disabled={bulkAction !== null}
+          aria-busy={bulkAction === "start"}
+          className="inline-flex h-[42px] items-center gap-2 rounded-[10px] border border-brand bg-brand px-4 text-[13px] font-bold text-brand-foreground disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <Play className="size-[14px]" fill="currentColor" stroke="none" aria-hidden="true" />
-          Start All
+          {bulkAction === "start" ? (
+            <LoaderCircle className="size-[14px] animate-spin" aria-hidden="true" />
+          ) : (
+            <Play className="size-[14px]" fill="currentColor" stroke="none" aria-hidden="true" />
+          )}
+          {bulkAction === "start" ? "Starting…" : "Start All"}
         </button>
         <button
           type="button"
           onClick={onStopAll}
-          className="inline-flex h-[42px] items-center gap-2 rounded-[10px] border border-border2 bg-card2 px-4 text-[13px] font-semibold text-foreground"
+          disabled={bulkAction !== null}
+          aria-busy={bulkAction === "stop"}
+          className="inline-flex h-[42px] items-center gap-2 rounded-[10px] border border-border2 bg-card2 px-4 text-[13px] font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <Square className="size-[13px]" fill="currentColor" stroke="none" aria-hidden="true" />
-          Stop All
+          {bulkAction === "stop" ? (
+            <LoaderCircle className="size-[14px] animate-spin" aria-hidden="true" />
+          ) : (
+            <Square className="size-[13px]" fill="currentColor" stroke="none" aria-hidden="true" />
+          )}
+          {bulkAction === "stop" ? "Stopping…" : "Stop All"}
         </button>
 
-        <ThemePicker
-          open={open === "theme"}
-          onOpenChange={(next) => setOpen(next ? "theme" : null)}
-        />
+        <div ref={themeRef}>
+          <ThemePicker
+            open={open === "theme"}
+            onOpenChange={(next) => setOpen(next ? "theme" : null)}
+          />
+        </div>
 
         <button
           type="button"

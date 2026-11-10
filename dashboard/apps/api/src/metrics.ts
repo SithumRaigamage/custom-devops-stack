@@ -1,6 +1,6 @@
 import { pool } from "./db.js";
 import { isDockerAvailable, listContainersByProject, projectNameForFolder } from "./docker.js";
-import type { Service } from "./services.js";
+import { loadServices, type Service } from "./services.js";
 import { getServiceDetails } from "./status.js";
 
 export type MetricsRange = "1h" | "6h" | "24h";
@@ -96,11 +96,19 @@ let started = false;
  * Sample every 15s and drop rows older than 24h hourly. Both timers are
  * unref'd so they never keep the process alive on their own.
  */
-export function startMetricsSampler(services: Service[]): void {
+export function startMetricsSampler(fallbackServices: Service[]): void {
   if (started) return;
   started = true;
 
   const sample = () => {
+    // Reload services.yaml so registry edits are reflected without a restart.
+    let services = fallbackServices;
+    try {
+      services = loadServices();
+    } catch {
+      // Keep the last usable snapshot while the file is being edited.
+    }
+
     void sampleRunningServices(services).catch(() => {
       // Docker/DB hiccups are transient; the next interval retries.
     });

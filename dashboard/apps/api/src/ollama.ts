@@ -2,7 +2,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 
 export interface OllamaModel {
   name: string;
-  size: string;
+  size: number;
   parameter_size?: string;
   quantization_level?: string;
   modified_at?: string;
@@ -15,8 +15,13 @@ export interface OllamaStatus {
 
 export interface OllamaPsModel {
   name: string;
-  size: string;
+  size: number;
   digest?: string;
+}
+
+export interface OllamaChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
 }
 
 /** Check if Ollama is reachable and get its version. */
@@ -54,10 +59,10 @@ export async function ollamaModels(
     if (!res.ok) {
       return [];
     }
-    const data = (await res.json()) as { models: { name: string; size?: string; modified_at?: string }[] };
+    const data = (await res.json()) as { models: { name: string; size?: number; modified_at?: string }[] };
     return ((data.models ?? []) as OllamaModel[]).map((m) => ({
       name: m.name,
-      size: m.size ?? "",
+      size: m.size ?? 0,
       parameter_size: undefined,
       quantization_level: undefined,
       modified_at: m.modified_at ?? "",
@@ -88,60 +93,64 @@ export async function ollamaRunning(
   }
 }
 
+async function ollamaPost(
+  path: string,
+  payload: Record<string, unknown>,
+  url: string,
+  timeoutMs: number,
+): Promise<Response> {
+  const base = url.replace(/\/+$/, "");
+  const res = await fetch(`${base}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Ollama responded ${res.status}`);
+  }
+  return res;
+}
+
 /** Load a model: POST /api/generate with empty prompt and keep_alive "30m". */
 export async function ollamaLoadModel(
   name: string,
   url: string = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434",
 ): Promise<void> {
-  const base = url.replace(/\/+$/, "");
-  // Model names contain colons, so URL-encode them
-  const encodedName = encodeURIComponent(name);
-  const generateUrl = `${base}/api/generate`;
-
-  const body = JSON.stringify({
-    prompt: "",
-    keep_alive: "30m",
-  });
-
-  try {
-    await fetch(generateUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS * 5),
-    });
-  } catch {
-    // Silently fail - the UI will show the "not reachable" state
-  }
+  await ollamaPost(
+    "/api/generate",
+    { model: name, prompt: "", stream: false, keep_alive: "30m" },
+    url,
+    REQUEST_TIMEOUT_MS * 5,
+  );
 }
 
-/** Unload a model: POST to /api/delete with keep_alive 0. */
+/** Unload a model from memory with keep_alive 0 (never delete its files). */
 export async function ollamaUnloadModel(
   name: string,
   url: string = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434",
 ): Promise<void> {
-  const base = url.replace(/\/+$/, "");
-  // Model names contain colons, so URL-encode them
-  const encodedName = encodeURIComponent(name);
-  const deleteUrl = `${base}/api/delete`;
+  await ollamaPost(
+    "/api/generate",
+    { model: name, prompt: "", stream: false, keep_alive: 0 },
+    url,
+    REQUEST_TIMEOUT_MS * 5,
+  );
+}
 
-  const body = JSON.stringify({
-    name: name,
-    keep_alive: 0,
-  });
-
-  try {
-    await fetch(deleteUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS * 5),
-    });
-  } catch {
-    // Silently fail - the UI will show the "not reachable" state
-  }
+/** Send a chat request and return the assistant's reply. */
+export async function ollamaChat(
+  model: string,
+  messages: OllamaChatMessage[],
+  url: string = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434",
+): Promise<string> {
+  const res = await ollamaPost(
+    "/api/chat",
+    { model, messages, stream: false },
+    url,
+    REQUEST_TIMEOUT_MS * 12,
+  );
+  const data = (await res.json()) as { message?: { content?: string } };
+  return data.message?.content?.trim() ?? "";
 }

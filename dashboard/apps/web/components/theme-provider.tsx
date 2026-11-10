@@ -19,6 +19,7 @@ import {
   type ThemeTokens,
 } from "@/lib/themes";
 import { THEME_STORAGE_KEY, THEME_STORAGE_VERSION } from "@/lib/theme-script";
+import { fetchSettings, saveSettings } from "@/lib/api";
 
 export type ThemeMode = "light" | "dark";
 
@@ -63,13 +64,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeName] = useState(DEFAULT_THEME_NAME);
   const [mode, setModeState] = useState<ThemeMode>(DEFAULT_DARK ? "dark" : "light");
   const [hydrated, setHydrated] = useState(false);
+  const [serverLoaded, setServerLoaded] = useState(false);
 
   const tokens = useMemo(
     () => buildTheme(themeByName(theme), mode === "dark"),
     [theme, mode],
   );
 
-  // The inline script in the root layout already painted the saved theme; adopt it here.
+  // The inline script already painted the localStorage choice for a fast first
+  // paint; the server copy then becomes the source of truth once it arrives.
   useEffect(() => {
     const stored = readStored();
     if (stored) {
@@ -77,6 +80,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setModeState(stored.mode);
     }
     setHydrated(true);
+
+    let cancelled = false;
+    fetchSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setThemeName(themeByName(settings.theme).n);
+        setModeState(settings.mode);
+      })
+      .catch(() => {
+        // Offline or unauthenticated: keep the localStorage choice.
+      })
+      .finally(() => {
+        if (!cancelled) setServerLoaded(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -100,6 +121,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       // Private mode or a full quota: theming still works for this session.
     }
   }, [tokens, theme, mode, hydrated]);
+
+  // Persist theme and mode to the server after the first server read, so the
+  // initial paint does not overwrite a stored preference.
+  useEffect(() => {
+    if (!hydrated || !serverLoaded) return;
+    void saveSettings({ theme, mode }).catch(() => {
+      // localStorage still keeps the choice for this browser.
+    });
+  }, [theme, mode, hydrated, serverLoaded]);
 
   const setTheme = useCallback((name: string) => setThemeName(themeByName(name).n), []);
   const setMode = useCallback((next: ThemeMode) => setModeState(next), []);

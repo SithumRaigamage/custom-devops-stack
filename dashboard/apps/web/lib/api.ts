@@ -21,6 +21,7 @@ export interface Service {
   url: string;
   folder: string;
   image: string;
+  icon?: string;
   status: ServiceStatus;
   cpuPct: number;
   memBytes: number;
@@ -396,4 +397,104 @@ export async function fetchMetricsRange(
   signal?: AbortSignal,
 ): Promise<MetricsResponse> {
   return requestJSON<MetricsResponse>(`/metrics?range=${range}`, { signal });
+}
+
+// --- Settings ---
+
+export interface NotificationPreferences {
+  desktop: boolean;
+  confirmStopAll: boolean;
+  autoRefresh: boolean;
+}
+
+export interface AppSettings {
+  stackRoot: string;
+  healthCheckIntervalSeconds: number;
+  theme: string;
+  mode: "light" | "dark";
+  notifications: NotificationPreferences;
+}
+
+export async function fetchSettings(signal?: AbortSignal): Promise<AppSettings> {
+  return requestJSON<AppSettings>("/settings", { signal });
+}
+
+export async function saveSettings(
+  patch: Partial<AppSettings>,
+): Promise<AppSettings> {
+  return requestJSON<AppSettings>("/settings", {
+    method: "PUT",
+    body: JSON.stringify(patch),
+  });
+}
+
+// --- Service registry ---
+
+export interface RegistryService {
+  id: string;
+  name: string;
+  desc?: string;
+  image?: string;
+  folder: string;
+  relativeFolder: string;
+  composeFile: string;
+  url: string;
+  health: string;
+  port?: number;
+  icon?: string;
+}
+
+export interface RegistryFolder {
+  name: string;
+  folder: string;
+  composeFile: string | null;
+}
+
+export interface ServiceInput {
+  id?: string;
+  name: string;
+  desc?: string;
+  folder: string;
+  composeFile?: string;
+  port: number;
+  url: string;
+  healthPath: string;
+  icon?: string;
+}
+
+export async function fetchRegistryServices(
+  signal?: AbortSignal,
+): Promise<RegistryService[]> {
+  return requestJSON<RegistryService[]>("/registry/services", { signal });
+}
+
+export async function fetchRegistryFolders(
+  signal?: AbortSignal,
+): Promise<RegistryFolder[]> {
+  return requestJSON<RegistryFolder[]>("/registry/folders", { signal });
+}
+
+export async function createRegistryService(
+  input: ServiceInput,
+): Promise<RegistryService> {
+  return requestJSON<RegistryService>("/registry/services", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateRegistryService(
+  id: string,
+  input: ServiceInput,
+): Promise<RegistryService> {
+  return requestJSON<RegistryService>(
+    `/registry/services/${encodeURIComponent(id)}`,
+    { method: "PUT", body: JSON.stringify(input) },
+  );
+}
+
+export async function deleteRegistryService(id: string): Promise<void> {
+  await requestJSON(`/registry/services/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }

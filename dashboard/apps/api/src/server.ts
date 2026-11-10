@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyReply } from "fastify";
 import cors from "@fastify/cors";
 import { runCompose } from "./compose.js";
 import { loadServices } from "./services.js";
@@ -7,6 +7,19 @@ import { isDockerAvailable, listContainersByProject, projectNameForFolder } from
 import { authRoutes } from "./auth.js";
 import { addEventClient, startServiceMonitor } from "./events.js";
 import { parseMetricsRange, readMetricsRange, startMetricsSampler } from "./metrics.js";
+import {
+  getSettings,
+  updateSettings,
+  SettingsUpdateSchema,
+} from "./settings.js";
+import {
+  createService,
+  deleteService,
+  listFolders,
+  listRegistryServices,
+  RegistryError,
+  updateService,
+} from "./registry.js";
 
 const HOST = "127.0.0.1";
 const PORT = 4000;
@@ -24,8 +37,9 @@ const ACTIONS = {
   restart: ["restart"],
 } as const;
 
-const services = loadServices();
-const byId = new Map(services.map((s) => [s.id, s]));
+// Background monitors keep this snapshot; request handling re-reads services.yaml
+// so registry edits take effect immediately.
+const initialServices = loadServices();
 
 const app = Fastify({ logger: true });
 
@@ -45,6 +59,7 @@ app.get("/api/services", async (_req, reply) => {
     return reply.code(503).send({ error: "docker_unavailable" });
   }
 
+  const services = loadServices();
   const byProject = await listContainersByProject();
   return Promise.all(
     services.map((service) =>
@@ -56,7 +71,7 @@ app.get("/api/services", async (_req, reply) => {
 app.post<{ Params: { id: string; action: string } }>(
   "/api/services/:id/:action",
   async (req, reply) => {
-    const service = byId.get(req.params.id);
+    const service = loadServices().find((entry) => entry.id === req.params.id);
     if (!service) return reply.code(404).send({ error: `Unknown service "${req.params.id}"` });
 
     const action = req.params.action;
@@ -84,7 +99,7 @@ app.post<{ Params: { id: string; action: string } }>(
 app.get<{ Params: { id: string }; Querystring: { tail?: string } }>(
   "/api/services/:id/logs",
   async (req, reply) => {
-    const service = byId.get(req.params.id);
+    const service = loadServices().find((entry) => entry.id === req.params.id);
     if (!service) return reply.code(404).send({ error: `Unknown service "${req.params.id}"` });
 
     const raw = req.query.tail ?? String(DEFAULT_TAIL);
@@ -111,7 +126,81 @@ app.get<{ Params: { id: string }; Querystring: { tail?: string } }>(
 // Auth routes
 await authRoutes(app);
 
-// CPU / memory time series, 1h | 6h | 24h (downsampled to 120 points).
+// ---- Settings -------------------------------------------------------------
+
+app.get("/api/settings", async (req, reply) => {
+  try {
+    return await getSettings();
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(503).send({ error: "settings_unavailable" });
+  }
+});
+
+app.put("/api/settings", async (req, reply) => {
+  const parsed = SettingsUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid settings" });
+  }
+
+  try {
+    return await updateSettings(parsed.data);
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(503).send({ error: "settings_unavailable" });
+  }
+});
+
+// ---- Service registry -----------------------------------------------------
+
+function sendRegistryError(reply: FastifyReply, err: unknown): FastifyReply {
+  if (err instanceof RegistryError) return reply.code(err.status).send({ error: err.message });
+  return reply.code(500).send({ error: "registry_error" });
+}
+
+app.get("/api/registry/services", async (_req, reply) => {
+  try {
+    return await listRegistryServices();
+  } catch (err) {
+    return sendRegistryError(reply, err);
+  }
+});
+
+app.get("/api/registry/folders", async (_req, reply) => {
+  try {
+    return await listFolders();
+  } catch (err) {
+    return sendRegistryError(reply, err);
+  }
+});
+
+app.post("/api/registry/services", async (req, reply) => {
+  try {
+    return reply.code(201).send(await createService(req.body));
+  } catch (err) {
+    return sendRegistryError(reply, err);
+  }
+});
+
+app.put<{ Params: { id: string } }>("/api/registry/services/:id", async (req, reply) => {
+  try {
+    return await updateService(req.params.id, req.body);
+  } catch (err) {
+    return sendRegistryError(reply, err);
+  }
+});
+
+app.delete<{ Params: { id: string } }>("/api/registry/services/:id", async (req, reply) => {
+  try {
+    await deleteService(req.params.id);
+    return { ok: true };
+  } catch (err) {
+    return sendRegistryError(reply, err);
+  }
+});
+
+// ---- Metrics --------------------------------------------------------------
+
 app.get<{ Querystring: { range?: string } }>("/api/metrics", async (req, reply) => {
   const range = parseMetricsRange(req.query.range);
   try {
@@ -122,8 +211,9 @@ app.get<{ Querystring: { range?: string } }>("/api/metrics", async (req, reply) 
   }
 });
 
-// Activity SSE endpoint
-app.get("/api/events", async (_req, reply) => {
+// ---- Activity stream ------------------------------------------------------
+
+app.get("/api/events", async (req, reply) => {
   reply.hijack();
   const res = reply.raw;
   res.writeHead(200, {
@@ -135,16 +225,15 @@ app.get("/api/events", async (_req, reply) => {
   res.write(": connected\n\n");
 
   const remove = addEventClient(res);
-  _req.raw.on("close", remove);
-  _req.raw.on("error", remove);
+  req.raw.on("close", remove);
+  req.raw.on("error", remove);
 
   return reply;
 });
 
-// Health check
 app.get("/api/health", async () => ({ ok: true }));
 
-startServiceMonitor(services);
-startMetricsSampler(services);
+startServiceMonitor(initialServices);
+startMetricsSampler(initialServices);
 
 await app.listen({ host: HOST, port: PORT });

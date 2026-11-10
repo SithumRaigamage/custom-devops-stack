@@ -11,6 +11,10 @@ export interface Service {
   composeFile: string;
   url: string;
   health: string;
+  /** Published port, when managed through the registry API. */
+  port?: number;
+  /** Icon name the dashboard renders for this service. */
+  icon?: string;
 }
 
 const FIELDS: (keyof Service)[] = ["id", "name", "folder", "composeFile", "url", "health"];

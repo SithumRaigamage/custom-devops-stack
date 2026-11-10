@@ -1,9 +1,9 @@
 import type { ServerResponse } from "node:http";
-import { eq } from "drizzle-orm";
-import { activity, db, settings } from "./db.js";
+import { activity, db } from "./db.js";
 import { isDockerAvailable, listContainersByProject, projectNameForFolder } from "./docker.js";
 import type { Service } from "./services.js";
 import { getServiceDetails, type ServiceDetail, type Status } from "./status.js";
+import { getSettings } from "./settings.js";
 
 // ---------------------------------------------------------------------------
 // SSE clients
@@ -83,7 +83,6 @@ export async function recordActivity(input: {
 // Background service monitor
 // ---------------------------------------------------------------------------
 
-const SETTINGS_KEY = "pollIntervalSeconds";
 const DEFAULT_INTERVAL_SECONDS = 4;
 const MIN_INTERVAL_SECONDS = 2;
 const MAX_INTERVAL_SECONDS = 300;
@@ -99,19 +98,11 @@ const STATUS_KIND: Record<Status, string> = {
 
 async function pollSeconds(): Promise<number> {
   try {
-    const rows = await db
-      .select({ value: settings.value })
-      .from(settings)
-      .where(eq(settings.key, SETTINGS_KEY));
-
-    const raw = rows[0]?.value;
-    if (raw === undefined) return DEFAULT_INTERVAL_SECONDS;
-
-    const parsed: unknown = JSON.parse(raw);
-    const seconds = typeof parsed === "number" ? parsed : Number(parsed);
-    if (!Number.isFinite(seconds)) return DEFAULT_INTERVAL_SECONDS;
-
-    return Math.min(Math.max(seconds, MIN_INTERVAL_SECONDS), MAX_INTERVAL_SECONDS);
+    const settings = await getSettings();
+    return Math.min(
+      Math.max(settings.healthCheckIntervalSeconds, MIN_INTERVAL_SECONDS),
+      MAX_INTERVAL_SECONDS,
+    );
   } catch {
     return DEFAULT_INTERVAL_SECONDS;
   }

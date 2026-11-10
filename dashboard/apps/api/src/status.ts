@@ -18,6 +18,7 @@ export interface ServiceDetail {
   url: string;
   folder: string;
   image: string;
+  icon?: string;
   status: Status;
   cpuPct: number;
   memBytes: number;
@@ -81,6 +82,7 @@ function emptyDetail(service: Service): ServiceDetail {
     url: service.url,
     folder: service.folder,
     image: service.image ?? "—",
+    ...(service.icon ? { icon: service.icon } : {}),
     status: "stopped",
     cpuPct: 0,
     memBytes: 0,

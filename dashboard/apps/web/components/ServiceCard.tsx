@@ -1,8 +1,11 @@
 "use client";
 
 import {
+  Box,
+  Database,
   ExternalLink,
   GitBranch,
+  Globe,
   MessageSquare,
   Play,
   RefreshCw,
@@ -21,6 +24,16 @@ const ICONS: Record<string, LucideIcon> = {
   jenkins: GitBranch,
   sonarqube: ShieldCheck,
   "open-webui": MessageSquare,
+};
+
+const ICON_BY_NAME: Record<string, LucideIcon> = {
+  "git-branch": GitBranch,
+  "shield-check": ShieldCheck,
+  "message-square": MessageSquare,
+  database: Database,
+  globe: Globe,
+  box: Box,
+  server: Server,
 };
 
 const PENDING_STATUS: Record<ServiceAction, UiStatus> = {
@@ -102,7 +115,8 @@ export function ServiceCard({
   const startDisabled = busy || running;
   const stopDisabled = busy || service.status === "stopped";
 
-  const Icon = ICONS[service.id] ?? Server;
+  const Icon =
+    (service.icon ? ICON_BY_NAME[service.icon] : undefined) ?? ICONS[service.id] ?? Server;
   const note = status === "unhealthy" ? service.healthNote : "";
 
   return (

@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 import { AuthGate } from "@/components/auth-gate";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ToastProvider } from "@/components/toast";
 import { themeInitScript } from "@/lib/theme-script";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -38,7 +39,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="min-h-screen bg-background text-foreground antialiased">
         <ThemeProvider>
           <Providers>
-            <AuthGate>{children}</AuthGate>
+            <ToastProvider>
+              <AuthGate>{children}</AuthGate>
+            </ToastProvider>
           </Providers>
         </ThemeProvider>
       </body>

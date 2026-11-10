@@ -80,6 +80,49 @@ export function projectNameForFolder(folder: string): string {
   return folder.split("/").filter(Boolean).pop() ?? folder;
 }
 
+/** The primary container for a Compose project, running or stopped. */
+export async function serviceContainer(project: string): Promise<Docker.Container | null> {
+  const byProject = await listContainersByProject();
+  const info = byProject.get(project)?.[0];
+  return info ? getDocker().getContainer(info.Id) : null;
+}
+
+/** Strip Docker's 8-byte multiplexing headers unless the container runs a TTY. */
+function demuxLogBuffer(buffer: Buffer, tty: boolean): Buffer {
+  if (tty) return buffer;
+
+  const chunks: Buffer[] = [];
+  let offset = 0;
+
+  while (offset + 8 <= buffer.length) {
+    const type = buffer[offset];
+    const size = buffer.readUInt32BE(offset + 4);
+    if ((type !== 1 && type !== 2) || size === 0) break;
+
+    const start = offset + 8;
+    if (start + size > buffer.length) break;
+
+    chunks.push(buffer.subarray(start, start + size));
+    offset = start + size;
+  }
+
+  if (offset < buffer.length) chunks.push(buffer.subarray(offset));
+  return chunks.length > 0 ? Buffer.concat(chunks) : buffer;
+}
+
+/** One-shot historical logs with Docker timestamps, as UTF-8 text. */
+export async function readLogTail(container: Docker.Container, tail: number): Promise<string> {
+  const inspect = await container.inspect();
+  const buffer = (await container.logs({
+    stdout: true,
+    stderr: true,
+    timestamps: true,
+    tail,
+  })) as Buffer;
+
+  return demuxLogBuffer(buffer, inspect.Config?.Tty === true).toString("utf8");
+}
+
 export function formatUptime(startedAt: string | undefined): string {
   if (!startedAt) return "—";
   const started = Date.parse(startedAt);

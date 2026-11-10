@@ -4,13 +4,13 @@
 
 export const API_BASE = "/api";
 
+// Service types
 export type ServiceStatus =
   | "healthy"
   | "unhealthy"
   | "stopped"
   | "starting"
-  | "stopping"
-  | "restarting";
+  | "stopping";
 export type ServiceAction = "start" | "stop" | "restart";
 
 export interface Service {
@@ -29,25 +29,45 @@ export interface Service {
   healthNote: string;
 }
 
+// Activity types
+export type ActivityKind =
+  | "start"
+  | "stop"
+  | "restart"
+  | "healthy"
+  | "unhealthy"
+  | "status"
+  | "build"
+  | "warn"
+  | "fail";
+
+export interface ActivityEntry {
+  id: number;
+  ts: number;
+  kind: string;
+  message: string;
+  actor: string;
+  serviceId: number | null;
+}
+
+// Log types
+export type LogLevel = "INFO" | "WARN" | "ERROR";
+
+export interface LogLine {
+  /** RFC3339 timestamp from Docker, or "" when the line had none. */
+  ts: string;
+  level: LogLevel;
+  msg: string;
+}
+
+// Auth status
 export interface AuthStatus {
   setupRequired: boolean;
   authenticated: boolean;
   username: string | null;
 }
 
-interface ApiErrorBody {
-  error?: unknown;
-}
-
-async function errorMessage(res: Response): Promise<string> {
-  try {
-    const body = (await res.json()) as ApiErrorBody;
-    if (typeof body?.error === "string" && body.error) return body.error;
-  } catch {
-    // body was not JSON
-  }
-  return `API responded ${res.status}`;
-}
+// --- API helpers ---
 
 /** The one fetch helper: always same-origin, always cookies, always X-StackPilot. */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -66,11 +86,23 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   });
 }
 
-async function requestJSON<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function errorMessage(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: string };
+    if (typeof body?.error === "string" && body.error) return body.error;
+  } catch {
+    // body was not JSON
+  }
+  return `API responded ${res.status}`;
+}
+
+export async function requestJSON<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await apiFetch(path, init);
   if (!res.ok) throw new Error(await errorMessage(res));
   return (await res.json()) as T;
 }
+
+// --- Services ---
 
 export async function fetchServices(signal?: AbortSignal): Promise<Service[]> {
   return requestJSON<Service[]>("/services", { signal });
@@ -82,17 +114,224 @@ export async function runServiceAction(id: string, action: ServiceAction): Promi
 
 export async function fetchServiceLogs(
   id: string,
-  tail = 100,
+  tail = 200,
   signal?: AbortSignal,
-): Promise<string> {
-  const body = await requestJSON<{ logs?: unknown }>(
+): Promise<LogLine[]> {
+  const body = await requestJSON<{ lines?: LogLine[] }>(
     `/services/${encodeURIComponent(id)}/logs?tail=${tail}`,
     { signal },
   );
-  return typeof body.logs === "string" ? body.logs : "";
+  return Array.isArray(body.lines) ? body.lines : [];
 }
 
-// ---- Auth ----
+export function serviceLogStreamUrl(id: string): string {
+  return `${API_BASE}/services/${encodeURIComponent(id)}/logs/stream`;
+}
+
+// --- Jenkins ---
+
+export type JenkinsBuildStatus = "success" | "failed" | "unstable" | "aborted" | "running";
+
+export interface JenkinsBuild {
+  num: number;
+  job: string;
+  branch: string;
+  status: JenkinsBuildStatus;
+  durationMs: number;
+  startedAt: number;
+}
+
+export interface JenkinsBuilds {
+  configured: boolean;
+  builds: JenkinsBuild[];
+}
+
+export interface JenkinsSummary {
+  configured: boolean;
+  successRate: number;
+  averageDurationMs: number;
+  running: number;
+  failedToday: number;
+}
+
+export async function fetchJenkinsBuilds(signal?: AbortSignal): Promise<JenkinsBuilds> {
+  const body = await requestJSON<{ configured?: boolean; builds?: JenkinsBuild[] }>(
+    "/jenkins/builds",
+    { signal },
+  );
+  return { configured: body.configured !== false, builds: body.builds ?? [] };
+}
+
+export async function fetchJenkinsSummary(signal?: AbortSignal): Promise<JenkinsSummary> {
+  const body = await requestJSON<Partial<JenkinsSummary> & { configured?: boolean }>(
+    "/jenkins/summary",
+    { signal },
+  );
+  return {
+    configured: body.configured !== false,
+    successRate: body.successRate ?? 0,
+    averageDurationMs: body.averageDurationMs ?? 0,
+    running: body.running ?? 0,
+    failedToday: body.failedToday ?? 0,
+  };
+}
+
+export async function triggerJenkinsBuild(job: string): Promise<void> {
+  await requestJSON(`/jenkins/jobs/${encodeURIComponent(job)}/build`, { method: "POST" });
+}
+
+export async function fetchJenkinsConsole(
+  job: string,
+  num: number,
+  tail = 200,
+  signal?: AbortSignal,
+): Promise<{ configured: boolean; lines: string[] }> {
+  const body = await requestJSON<{ configured?: boolean; lines?: string[] }>(
+    `/jenkins/jobs/${encodeURIComponent(job)}/${num}/console?tail=${tail}`,
+    { signal },
+  );
+  return { configured: body.configured !== false, lines: body.lines ?? [] };
+}
+
+// --- SonarQube ---
+
+export interface SonarProject {
+  key: string;
+  name: string;
+  lastAnalysisDate: string | null;
+}
+
+export interface SonarProjects {
+  configured: boolean;
+  projects: SonarProject[];
+}
+
+export interface SonarGate {
+  status: string;
+  conditions: {
+    metricKey?: string;
+    comparator?: string;
+    errorThreshold?: string;
+    actualValue?: string;
+    status?: string;
+  }[];
+}
+
+export interface SonarMeasures {
+  bugs: number | null;
+  vulnerabilities: number | null;
+  securityHotspots: number | null;
+  codeSmells: number | null;
+  coverage: number | null;
+  duplicatedLinesDensity: number | null;
+  reliabilityRating: string | null;
+  securityRating: string | null;
+  sqaleRating: string | null;
+  ncloc: number | null;
+}
+
+const EMPTY_SONAR_MEASURES: SonarMeasures = {
+  bugs: null,
+  vulnerabilities: null,
+  securityHotspots: null,
+  codeSmells: null,
+  coverage: null,
+  duplicatedLinesDensity: null,
+  reliabilityRating: null,
+  securityRating: null,
+  sqaleRating: null,
+  ncloc: null,
+};
+
+export async function fetchSonarProjects(signal?: AbortSignal): Promise<SonarProjects> {
+  const body = await requestJSON<{ configured?: boolean; projects?: SonarProject[] }>(
+    "/sonar/projects",
+    { signal },
+  );
+  return { configured: body.configured !== false, projects: body.projects ?? [] };
+}
+
+export async function fetchSonarProject(
+  key: string,
+  signal?: AbortSignal,
+): Promise<SonarProjectDetail> {
+  const body = await requestJSON<Partial<SonarProjectDetail> & { configured?: boolean }>(
+    `/sonar/projects/${encodeURIComponent(key)}`,
+    { signal },
+  );
+
+  return {
+    configured: body.configured !== false,
+    key,
+    name: body.name ?? key,
+    lastAnalysisDate: body.lastAnalysisDate ?? null,
+    gate: body.gate ?? { status: "NONE", conditions: [] },
+    measures: { ...EMPTY_SONAR_MEASURES, ...(body.measures ?? {}) },
+  };
+}
+
+export interface SonarProjectDetail {
+  configured: boolean;
+  key: string;
+  name: string;
+  lastAnalysisDate: string | null;
+  gate: SonarGate;
+  measures: SonarMeasures;
+}
+
+// --- Ollama ----
+
+export interface OllamaModel {
+  name: string;
+  size: string;
+  parameter_size?: string;
+  quantization_level?: string;
+  modified_at?: string;
+}
+
+export interface OllamaStatus {
+  reachable: boolean;
+  version: string | null;
+}
+
+export async function fetchOllamaStatus(signal?: AbortSignal): Promise<OllamaStatus> {
+  return requestJSON<OllamaStatus>("/ollama/status", { signal });
+}
+
+export async function fetchOllamaModels(signal?: AbortSignal): Promise<OllamaModel[]> {
+  return requestJSON<OllamaModel[]>("/ollama/models", { signal });
+}
+
+export async function fetchOllamaRunning(signal?: AbortSignal): Promise<OllamaModel[]> {
+  return requestJSON<OllamaModel[]>("/ollama/running", { signal });
+}
+
+// Load a model: POST /api/generate with empty prompt and keep_alive "30m"
+export async function ollamaLoadModel(name: string): Promise<void> {
+  await requestJSON("/ollama/models/" + encodeURIComponent(name) + "/load", { method: "POST" });
+}
+
+// Unload a model: POST with keep_alive 0
+export async function ollamaUnloadModel(name: string): Promise<void> {
+  await requestJSON("/ollama/models/" + encodeURIComponent(name) + "/unload", { method: "POST" });
+}
+
+// --- Activity & events ---
+
+export const EVENTS_URL = `${API_BASE}/events`;
+
+export async function fetchActivity(
+  limit = 50,
+  signal?: AbortSignal,
+): Promise<ActivityEntry[]> {
+  const body = await requestJSON<{ activity?: ActivityEntry[] }>(
+    `/activity?limit=${limit}`,
+    { signal },
+  );
+  return Array.isArray(body.activity) ? body.activity : [];
+}
+
+// --- Auth ---
 
 export async function fetchAuthStatus(signal?: AbortSignal): Promise<AuthStatus> {
   return requestJSON<AuthStatus>("/auth/status", { signal });

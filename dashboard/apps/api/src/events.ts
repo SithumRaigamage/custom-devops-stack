@@ -1,0 +1,181 @@
+import type { ServerResponse } from "node:http";
+import { eq } from "drizzle-orm";
+import { activity, db, settings } from "./db.js";
+import { isDockerAvailable, listContainersByProject, projectNameForFolder } from "./docker.js";
+import type { Service } from "./services.js";
+import { getServiceDetails, type ServiceDetail, type Status } from "./status.js";
+
+// ---------------------------------------------------------------------------
+// SSE clients
+// ---------------------------------------------------------------------------
+
+const clients = new Set<ServerResponse>();
+let heartbeat: NodeJS.Timeout | null = null;
+
+function ensureHeartbeat(): void {
+  if (heartbeat) return;
+  heartbeat = setInterval(() => {
+    for (const res of clients) {
+      if (!res.writableEnded) res.write(": ping\n\n");
+    }
+  }, 15000);
+  heartbeat.unref?.();
+}
+
+export function addEventClient(res: ServerResponse): () => void {
+  clients.add(res);
+  ensureHeartbeat();
+
+  return () => {
+    clients.delete(res);
+  };
+}
+
+export function broadcast(event: string, data: unknown): void {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const res of clients) {
+    if (!res.writableEnded) res.write(payload);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Activity
+// ---------------------------------------------------------------------------
+
+export interface ActivityEntry {
+  id: number;
+  ts: number;
+  kind: string;
+  message: string;
+  actor: string;
+  serviceId: number | null;
+}
+
+export async function recordActivity(input: {
+  kind: string;
+  message: string;
+  actor: string;
+}): Promise<ActivityEntry> {
+  const [row] = await db
+    .insert(activity)
+    .values({
+      ts: Date.now(),
+      kind: input.kind,
+      message: input.message,
+      actor: input.actor,
+    })
+    .returning();
+
+  const entry: ActivityEntry = {
+    id: row.id,
+    ts: Number(row.ts),
+    kind: row.kind,
+    message: row.message,
+    actor: row.actor,
+    serviceId: row.service_id ?? null,
+  };
+
+  broadcast("activity.created", entry);
+  return entry;
+}
+
+// ---------------------------------------------------------------------------
+// Background service monitor
+// ---------------------------------------------------------------------------
+
+const SETTINGS_KEY = "pollIntervalSeconds";
+const DEFAULT_INTERVAL_SECONDS = 4;
+const MIN_INTERVAL_SECONDS = 2;
+const MAX_INTERVAL_SECONDS = 300;
+
+const STATUS_KIND: Record<Status, string> = {
+  healthy: "healthy",
+  unhealthy: "unhealthy",
+  stopped: "stop",
+  starting: "status",
+  stopping: "status",
+  restarting: "status",
+};
+
+async function pollSeconds(): Promise<number> {
+  try {
+    const rows = await db
+      .select({ value: settings.value })
+      .from(settings)
+      .where(eq(settings.key, SETTINGS_KEY));
+
+    const raw = rows[0]?.value;
+    if (raw === undefined) return DEFAULT_INTERVAL_SECONDS;
+
+    const parsed: unknown = JSON.parse(raw);
+    const seconds = typeof parsed === "number" ? parsed : Number(parsed);
+    if (!Number.isFinite(seconds)) return DEFAULT_INTERVAL_SECONDS;
+
+    return Math.min(Math.max(seconds, MIN_INTERVAL_SECONDS), MAX_INTERVAL_SECONDS);
+  } catch {
+    return DEFAULT_INTERVAL_SECONDS;
+  }
+}
+
+function signature(detail: ServiceDetail): string {
+  return `${detail.status}|${detail.image}|${detail.port}|${detail.healthNote}`;
+}
+
+/** Poll Docker in the background so status changes are recorded even with no browser open. */
+export function startServiceMonitor(services: Service[]): void {
+  const previous = new Map<string, string>();
+  let ticking = false;
+
+  async function tick(): Promise<void> {
+    if (ticking) return;
+    ticking = true;
+
+    try {
+      if (!(await isDockerAvailable())) return;
+
+      const byProject = await listContainersByProject();
+      const details = await Promise.all(
+        services.map((service) =>
+          getServiceDetails(service, byProject.get(projectNameForFolder(service.folder))?.[0]),
+        ),
+      );
+
+      broadcast("stats", { ts: Date.now(), services: details });
+
+      for (const detail of details) {
+        const current = signature(detail);
+        const before = previous.get(detail.id);
+        previous.set(detail.id, current);
+
+        // The first observation only seeds the baseline.
+        if (before === undefined || before === current) continue;
+
+        broadcast("service.updated", detail);
+
+        const beforeStatus = before.split("|")[0] as Status;
+        if (beforeStatus !== detail.status) {
+          await recordActivity({
+            kind: STATUS_KIND[detail.status],
+            message: `${detail.name} is ${detail.status}`,
+            actor: "system",
+          });
+        }
+      }
+    } catch {
+      // Docker hiccups are transient; the next tick retries.
+    } finally {
+      ticking = false;
+    }
+  }
+
+  const schedule = () => {
+    void pollSeconds().then((seconds) => {
+      setTimeout(async () => {
+        await tick();
+        schedule();
+      }, seconds * 1000);
+    });
+  };
+
+  schedule();
+}

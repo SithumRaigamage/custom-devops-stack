@@ -5,26 +5,13 @@ import { useRouter } from "next/navigation";
 import { Bell, KeyRound, LogOut, Moon, Play, Search, Square, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { changePassword, fetchAuthStatus, logout } from "@/lib/api";
+import { activityDot, relativeTime } from "@/lib/activity";
+import { useActivity } from "@/lib/use-activity";
+import { useEvents } from "@/lib/use-events";
 import { useSearch } from "./search-provider";
 import { useTheme } from "./theme-provider";
 import { ThemePicker } from "./ThemePicker";
 import { Spinner } from "@/app/Spinner";
-
-export type ActivityKind = "start" | "stop" | "build" | "warn" | "fail";
-
-export interface TopBarActivity {
-  kind: ActivityKind;
-  text: string;
-  time: string;
-}
-
-const ACTIVITY_DOT: Record<ActivityKind, string> = {
-  start: "bg-ok",
-  stop: "bg-bad",
-  build: "bg-info",
-  warn: "bg-warn",
-  fail: "bg-bad",
-};
 
 const MIN_PASSWORD = 12;
 
@@ -37,22 +24,41 @@ function initialsOf(name: string): string {
 }
 
 interface TopBarProps {
-  /** Last activities, newest first. The first four are shown in the bell popover. */
-  notifications?: TopBarActivity[];
   onStartAll?: () => void;
   onStopAll?: () => void;
 }
 
-export function TopBar({ notifications = [], onStartAll, onStopAll }: TopBarProps) {
+export function TopBar({ onStartAll, onStopAll }: TopBarProps) {
   const { dark, toggleMode } = useTheme();
   const { query, setQuery } = useSearch();
   const router = useRouter();
 
-  // The preview starts with three unread activities.
-  const [unread, setUnread] = useState(Math.min(3, notifications.length));
+  // One EventSource for the whole dashboard, mounted with the top bar.
+  const { reconnecting } = useEvents();
+  const { data: activity = [] } = useActivity(50);
+  const latestActivityId = activity[0]?.id ?? null;
+  const [seenActivityId, setSeenActivityId] = useState<number | null>(null);
+
   const [open, setOpen] = useState<"theme" | "notifications" | "user" | null>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (latestActivityId === null) return;
+    setSeenActivityId((current) => current ?? latestActivityId);
+  }, [latestActivityId]);
+
+  // Keep the badge cleared while the popover is open.
+  useEffect(() => {
+    if (open === "notifications" && latestActivityId !== null) {
+      setSeenActivityId(latestActivityId);
+    }
+  }, [open, latestActivityId]);
+
+  const unread =
+    seenActivityId === null
+      ? 0
+      : activity.filter((item) => item.id > seenActivityId).length;
 
   // Real username from the session.
   const [username, setUsername] = useState<string | null>(null);
@@ -97,7 +103,7 @@ export function TopBar({ notifications = [], onStartAll, onStopAll }: TopBarProp
       setOpen(null);
       return;
     }
-    setUnread(0);
+    setSeenActivityId(latestActivityId);
     setOpen("notifications");
   }
 
@@ -221,6 +227,19 @@ export function TopBar({ notifications = [], onStartAll, onStopAll }: TopBarProp
           )}
         </button>
 
+        {reconnecting && (
+          <span
+            role="status"
+            className="inline-flex h-[42px] items-center gap-1.5 rounded-[10px] border border-warn-bg bg-warn-bg px-3 text-[12px] font-semibold text-warn"
+          >
+            <span
+              className="size-1.5 rounded-full bg-current animate-[dcpulse_1s_infinite]"
+              aria-hidden="true"
+            />
+            Reconnecting…
+          </span>
+        )}
+
         <div ref={notificationsRef} className="relative">
           <button
             type="button"
@@ -242,17 +261,19 @@ export function TopBar({ notifications = [], onStartAll, onStopAll }: TopBarProp
               <div className="px-2.5 py-2 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
                 Notifications
               </div>
-              {notifications.length === 0 ? (
+              {activity.length === 0 ? (
                 <p className="px-2.5 py-2 text-xs text-muted-foreground">No activity yet.</p>
               ) : (
-                notifications.slice(0, 4).map((item, i) => (
-                  <div key={`${item.text}-${i}`} className="flex gap-2.5 rounded-lg p-2.5">
+                activity.slice(0, 4).map((item) => (
+                  <div key={item.id} className="flex gap-2.5 rounded-lg p-2.5">
                     <span
-                      className={cn("mt-1.5 size-2 shrink-0 rounded-full", ACTIVITY_DOT[item.kind])}
+                      className={cn("mt-1.5 size-2 shrink-0 rounded-full", activityDot(item.kind))}
                     />
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-[13px] text-foreground">{item.text}</span>
-                      <span className="text-xs text-muted-foreground">{item.time}</span>
+                      <span className="text-[13px] text-foreground">{item.message}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {relativeTime(item.ts)} · {item.actor}
+                      </span>
                     </div>
                   </div>
                 ))

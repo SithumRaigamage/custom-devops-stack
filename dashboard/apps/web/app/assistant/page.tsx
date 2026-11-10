@@ -3,49 +3,68 @@
 import { useEffect, useRef, useState } from "react";
 import { Send, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
-import {
-  ASSISTANT_GREETING,
-  ASSISTANT_MODEL,
-  ASSISTANT_NEW_CHAT,
-  ASSISTANT_SUGGESTIONS,
-  assistantAnswer,
-  type ChatMessage,
-} from "@/lib/mock";
+import { useOllamaStatus, useOllamaModels, useOllamaRunning } from "@/lib/use-ollama";
+import { fetchOllamaStatus, fetchOllamaModels, fetchOllamaRunning } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
 
 export default function AssistantPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "assistant", text: ASSISTANT_GREETING },
+  const [messages, setMessages] = useState<
+    { role: "user" | "assistant"; content: string }[]
+  >([
+    {
+      role: "assistant",
+      content:
+        "I'm StackPilot's assistant. Ask me about your Docker Compose services, Jenkins builds, SonarQube quality, or container logs.",
+    },
   ]);
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [conversations, setConversations] = useState<
+    { id: number; created_at: number }[]
+  >([]);
+  const [model, setModel] = useState("gpt-oss:20b");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
+    void fetchConversations();
   }, []);
 
-  function send(text: string) {
-    const question = text.trim();
+  async function fetchConversations() {
+    const res = await fetch("/api/assistant/conversations");
+    const data = await res.json();
+    setConversations(data.conversations ?? []);
+  }
+
+  function send() {
+    const question = draft.trim();
     if (!question || thinking) return;
 
-    setMessages((current) => [...current, { role: "user", text: question }]);
+    setMessages((current) => [...current, { role: "user", content: question }]);
     setDraft("");
     setThinking(true);
 
-    timer.current = setTimeout(() => {
-      setMessages((current) => [
-        ...current,
-        { role: "assistant", text: assistantAnswer(question, ASSISTANT_MODEL) },
-      ]);
+    // Send to the assistant API
+    fetch("/api/assistant/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-StackPilot": "1",
+      },
+      body: JSON.stringify({ message: question, model }),
+    }).then(() => {
       setThinking(false);
-    }, 900);
+    });
   }
 
   function newChat() {
-    if (timer.current) clearTimeout(timer.current);
-    setMessages([{ role: "assistant", text: ASSISTANT_NEW_CHAT }]);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setMessages([
+      {
+        role: "assistant",
+        content:
+          "I'm StackPilot's assistant. Ask me about your Docker Compose services, Jenkins builds, SonarQube quality, or container logs.",
+      },
+    ]);
     setDraft("");
     setThinking(false);
   }
@@ -66,7 +85,7 @@ export default function AssistantPage() {
             <div className="flex flex-col">
               <span className="font-semibold">Stack Assistant</span>
               <span className="text-xs text-muted-foreground">
-                {ASSISTANT_MODEL} via Ollama · reads Jenkins, SonarQube and container logs
+                gpt-oss:20b via Ollama · reads Jenkins, SonarQube and container logs
               </span>
             </div>
           </div>
@@ -88,7 +107,7 @@ export default function AssistantPage() {
 
             return (
               <div
-                key={`${message.role}-${i}`}
+                key={i}
                 className={mine ? "flex justify-end" : "flex justify-start"}
               >
                 <div
@@ -98,7 +117,7 @@ export default function AssistantPage() {
                       : "max-w-[min(640px,85%)] rounded-[14px] rounded-bl-[4px] border border-border2 bg-card2 px-4 py-3 text-sm leading-[1.55] text-foreground"
                   }
                 >
-                  {message.text}
+                  {message.content}
                 </div>
               </div>
             );
@@ -106,7 +125,9 @@ export default function AssistantPage() {
 
           {thinking && (
             <div className="flex">
-              <div className="animate-[dcpulse_1.2s_infinite] rounded-[14px] bg-card2 px-4 py-3 text-[13px] text-muted-foreground">
+              <div
+                className="animate-[dcpulse_1.2s_infinite] rounded-[14px] bg-card2 px-4 py-3 text-[13px] text-muted-foreground"
+              >
                 Checking your stack…
               </div>
             </div>
@@ -115,22 +136,19 @@ export default function AssistantPage() {
 
         <div className="flex flex-col gap-2.5 border-t border-border px-5 pb-5 pt-3.5">
           <div className="flex flex-wrap gap-2">
-            {ASSISTANT_SUGGESTIONS.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                onClick={() => send(suggestion)}
-                className="h-[34px] rounded-full border border-border2 bg-card2 px-3 text-xs text-fg2"
-              >
-                {suggestion}
-              </button>
-            ))}
+            <button
+              type="button"
+              onClick={newChat}
+              className="h-[34px] rounded-full border border-border2 bg-card2 px-3 text-xs text-fg2"
+            >
+              New chat
+            </button>
           </div>
 
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              send(draft);
+              send();
             }}
             className="flex gap-2.5"
           >

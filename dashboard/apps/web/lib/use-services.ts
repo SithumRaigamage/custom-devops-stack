@@ -4,13 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchServices, runServiceAction, type ServiceAction } from "./api";
 
 export const SERVICES_QUERY_KEY = ["services"] as const;
+/** Fallback cadence; live updates normally arrive over /api/events. */
 export const POLL_INTERVAL_MS = 4_000;
 
 export function useServices() {
   return useQuery({
     queryKey: SERVICES_QUERY_KEY,
     queryFn: ({ signal }) => fetchServices(signal),
-    refetchInterval: POLL_INTERVAL_MS,
   });
 }
 

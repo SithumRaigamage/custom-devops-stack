@@ -10,11 +10,12 @@ import {
 export const JENKINS_QUERY_KEY = ["jenkins"] as const;
 
 /** The API caches Jenkins reads for 10s, so there is no need to poll faster. */
-export function useJenkinsBuilds() {
+export function useJenkinsBuilds(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: [...JENKINS_QUERY_KEY, "builds"],
     queryFn: ({ signal }) => fetchJenkinsBuilds(signal),
     staleTime: 10_000,
+    enabled: options.enabled ?? true,
   });
 }
 

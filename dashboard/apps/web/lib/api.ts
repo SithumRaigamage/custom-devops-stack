@@ -401,10 +401,29 @@ export async function fetchMetricsRange(
 
 // --- Settings ---
 
+export interface AlertRuleToggles {
+  serviceStopped: boolean;
+  serviceUnhealthy: boolean;
+  jenkinsFailed: boolean;
+  sonarGateFailed: boolean;
+  ollamaUnreachable: boolean;
+}
+
 export interface NotificationPreferences {
   desktop: boolean;
   confirmStopAll: boolean;
   autoRefresh: boolean;
+  rules: AlertRuleToggles;
+  /** Write-only: the server returns an empty string and a configured flag. */
+  discordWebhookUrl: string;
+  /** Write-only: the server returns an empty string and a configured flag. */
+  telegramBotToken: string;
+  telegramChatId: string;
+}
+
+export interface NotificationChannels {
+  discord: boolean;
+  telegram: boolean;
 }
 
 export interface AppSettings {
@@ -413,19 +432,71 @@ export interface AppSettings {
   theme: string;
   mode: "light" | "dark";
   notifications: NotificationPreferences;
+  channels: NotificationChannels;
+}
+
+export interface SettingsPatch {
+  stackRoot?: string;
+  healthCheckIntervalSeconds?: number;
+  theme?: string;
+  mode?: "light" | "dark";
+  notifications?: Partial<Omit<NotificationPreferences, "rules">> & {
+    rules?: Partial<AlertRuleToggles>;
+  };
 }
 
 export async function fetchSettings(signal?: AbortSignal): Promise<AppSettings> {
   return requestJSON<AppSettings>("/settings", { signal });
 }
 
-export async function saveSettings(
-  patch: Partial<AppSettings>,
-): Promise<AppSettings> {
+export async function saveSettings(patch: SettingsPatch): Promise<AppSettings> {
   return requestJSON<AppSettings>("/settings", {
     method: "PUT",
     body: JSON.stringify(patch),
   });
+}
+
+// --- Alerts ---
+
+export type AlertSeverity = "info" | "warn" | "bad";
+
+export interface Alert {
+  id: number;
+  ts: number;
+  rule: string;
+  severity: AlertSeverity;
+  message: string;
+  read: boolean;
+  resolvedAt: number | null;
+  serviceKey: string | null;
+  link: string | null;
+  incidentKey: string;
+}
+
+export interface AlertsResponse {
+  alerts: Alert[];
+  unread: number;
+}
+
+export type ChannelResult = "sent" | "not_configured" | "failed";
+
+export async function fetchAlerts(signal?: AbortSignal): Promise<AlertsResponse> {
+  return requestJSON<AlertsResponse>("/alerts", { signal });
+}
+
+export async function markAlertRead(id: number): Promise<void> {
+  await requestJSON(`/alerts/${id}/read`, { method: "POST" });
+}
+
+export async function markAllAlertsRead(): Promise<void> {
+  await requestJSON("/alerts/read", { method: "POST" });
+}
+
+export async function sendTestNotification(): Promise<{
+  discord: ChannelResult;
+  telegram: ChannelResult;
+}> {
+  return requestJSON("/notifications/test", { method: "POST" });
 }
 
 // --- Service registry ---
@@ -497,4 +568,94 @@ export async function deleteRegistryService(id: string): Promise<void> {
   await requestJSON(`/registry/services/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+}
+
+// --- Docker housekeeping ---
+
+export type DiskCategoryKey = "images" | "containers" | "volumes" | "buildCache";
+
+export interface DiskCategory {
+  key: DiskCategoryKey;
+  label: string;
+  totalCount: number;
+  activeCount: number;
+  sizeBytes: number;
+  reclaimableBytes: number;
+}
+
+export interface DiskUsage {
+  categories: DiskCategory[];
+  sizeBytes: number;
+  reclaimableBytes: number;
+}
+
+export interface BackupFile {
+  name: string;
+  size: number;
+  date: number;
+  image: string | null;
+  imagePresent: boolean;
+}
+
+export interface ServiceBackups {
+  serviceId: string;
+  serviceName: string;
+  folder: string;
+  backups: BackupFile[];
+}
+
+export interface DanglingImage {
+  id: string;
+  repository: string;
+  tag: string;
+  sizeBytes: number;
+  createdSince: string;
+}
+
+export interface PrunePreview {
+  images: DanglingImage[];
+  buildCacheBytes: number;
+  totalBytes: number;
+}
+
+export interface PruneResult {
+  imagesRemoved: number;
+  imagesSkipped: string[];
+  buildCacheBytes: number;
+  output: string;
+}
+
+export async function fetchDockerDisk(signal?: AbortSignal): Promise<DiskUsage> {
+  return requestJSON<DiskUsage>("/docker/disk", { signal });
+}
+
+export async function fetchDockerBackups(
+  signal?: AbortSignal,
+): Promise<ServiceBackups[]> {
+  return requestJSON<ServiceBackups[]>("/docker/backups", { signal });
+}
+
+export async function createDockerBackup(serviceId: string): Promise<BackupFile> {
+  return requestJSON<BackupFile>(
+    `/docker/backups/${encodeURIComponent(serviceId)}`,
+    { method: "POST" },
+  );
+}
+
+export async function restoreDockerBackup(
+  serviceId: string,
+  name: string,
+): Promise<void> {
+  await requestJSON(
+    `/docker/backups/${encodeURIComponent(serviceId)}/restore`,
+    { method: "POST", body: JSON.stringify({ name }) },
+  );
+}
+
+export async function fetchPrunePreview(signal?: AbortSignal): Promise<PrunePreview> {
+  return requestJSON<PrunePreview>("/docker/prune", { signal });
+}
+
+export async function runDockerPrune(): Promise<PruneResult> {
+  return requestJSON<PruneResult>("/docker/prune", { method: "POST" });
 }

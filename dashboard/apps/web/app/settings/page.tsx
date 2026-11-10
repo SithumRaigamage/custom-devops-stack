@@ -3,11 +3,15 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { useToast } from "@/components/toast";
-import type {
-  NotificationPreferences,
-  RegistryFolder,
-  RegistryService,
-  ServiceInput,
+import {
+  sendTestNotification,
+  type AlertRuleToggles,
+  type ChannelResult,
+  type NotificationPreferences,
+  type RegistryFolder,
+  type RegistryService,
+  type ServiceInput,
+  type SettingsPatch,
 } from "@/lib/api";
 import {
   useCreateRegistryService,
@@ -22,14 +26,14 @@ import {
 const INTERVAL_OPTIONS = [2, 4, 10, 30];
 
 const TOGGLES: {
-  key: keyof NotificationPreferences;
+  key: "desktop" | "confirmStopAll" | "autoRefresh";
   label: string;
   hint: string;
 }[] = [
   {
     key: "desktop",
     label: "Desktop notifications",
-    hint: "Alert me when a service goes down or a build fails.",
+    hint: "Show a browser notification when an alert fires while this tab is hidden.",
   },
   {
     key: "confirmStopAll",
@@ -40,6 +44,38 @@ const TOGGLES: {
     key: "autoRefresh",
     label: "Auto-refresh",
     hint: "Keep health checks and charts live.",
+  },
+];
+
+const ALERT_RULES: {
+  key: keyof AlertRuleToggles;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    key: "serviceStopped",
+    label: "Service stopped unexpectedly",
+    hint: "Fires when a container exits without a dashboard stop.",
+  },
+  {
+    key: "serviceUnhealthy",
+    label: "Unhealthy for over 60 seconds",
+    hint: "Waits out short health-check blips before alerting.",
+  },
+  {
+    key: "jenkinsFailed",
+    label: "Jenkins build failed",
+    hint: "One alert per failed build, resolved by the next successful one.",
+  },
+  {
+    key: "sonarGateFailed",
+    label: "SonarQube quality gate failed",
+    hint: "Fires when a project's gate turns red.",
+  },
+  {
+    key: "ollamaUnreachable",
+    label: "Ollama unreachable",
+    hint: "The local model runtime stops answering.",
   },
 ];
 
@@ -95,6 +131,12 @@ function portFor(service?: RegistryService): string {
   return "8080";
 }
 
+function channelLabel(result: ChannelResult): string {
+  if (result === "sent") return "sent";
+  if (result === "not_configured") return "not configured";
+  return "failed";
+}
+
 export default function SettingsPage() {
   const { toast } = useToast();
   const { data: settings, isPending, error } = useSettings();
@@ -105,6 +147,8 @@ export default function SettingsPage() {
   const deleteMutation = useDeleteRegistryService();
 
   const [form, setForm] = useState<SettingsForm | null>(null);
+  const [dirtyChannels, setDirtyChannels] = useState({ discord: false, telegram: false });
+  const [testPending, setTestPending] = useState(false);
   const [editor, setEditor] = useState<
     { mode: "add" } | { mode: "edit"; service: RegistryService } | null
   >(null);
@@ -119,10 +163,36 @@ export default function SettingsPage() {
     setForm((current) => current ?? next);
   }, [settings]);
 
-  function setNotification(key: keyof NotificationPreferences, value: boolean) {
+  function setPreference(key: (typeof TOGGLES)[number]["key"], value: boolean) {
     setForm((current) =>
       current
         ? { ...current, notifications: { ...current.notifications, [key]: value } }
+        : current,
+    );
+  }
+
+  function setRule(key: keyof AlertRuleToggles, value: boolean) {
+    setForm((current) =>
+      current
+        ? {
+            ...current,
+            notifications: {
+              ...current.notifications,
+              rules: { ...current.notifications.rules, [key]: value },
+            },
+          }
+        : current,
+    );
+  }
+
+  function setSecret(field: "discordWebhookUrl" | "telegramBotToken", value: string) {
+    setDirtyChannels((current) => ({
+      ...current,
+      [field === "discordWebhookUrl" ? "discord" : "telegram"]: true,
+    }));
+    setForm((current) =>
+      current
+        ? { ...current, notifications: { ...current.notifications, [field]: value } }
         : current,
     );
   }
@@ -131,11 +201,61 @@ export default function SettingsPage() {
     event.preventDefault();
     if (!form) return;
 
+    const notifications: NonNullable<SettingsPatch["notifications"]> = {
+      desktop: form.notifications.desktop,
+      confirmStopAll: form.notifications.confirmStopAll,
+      autoRefresh: form.notifications.autoRefresh,
+      rules: form.notifications.rules,
+      telegramChatId: form.notifications.telegramChatId,
+    };
+
+    // Secrets are write-only: send them only when the user edited the field, so an
+    // unrelated save never clears a stored webhook or token.
+    if (dirtyChannels.discord) notifications.discordWebhookUrl = form.notifications.discordWebhookUrl;
+    if (dirtyChannels.telegram) notifications.telegramBotToken = form.notifications.telegramBotToken;
+
     try {
-      await saveMutation.mutateAsync({ ...form });
+      await saveMutation.mutateAsync({
+        stackRoot: form.stackRoot,
+        healthCheckIntervalSeconds: form.healthCheckIntervalSeconds,
+        notifications,
+      });
+      setDirtyChannels({ discord: false, telegram: false });
+      setForm((current) =>
+        current
+          ? {
+              ...current,
+              notifications: {
+                ...current.notifications,
+                discordWebhookUrl: "",
+                telegramBotToken: "",
+              },
+            }
+          : current,
+      );
       toast("Settings saved");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not save settings", "error");
+    }
+  }
+
+  async function handleTest() {
+    setTestPending(true);
+    try {
+      const result = await sendTestNotification();
+      if (result.discord === "not_configured" && result.telegram === "not_configured") {
+        toast("Add a Discord webhook or a Telegram token and chat id first.", "error");
+      } else {
+        const anySent = result.discord === "sent" || result.telegram === "sent";
+        toast(
+          `Test — Discord: ${channelLabel(result.discord)} · Telegram: ${channelLabel(result.telegram)}`,
+          anySent ? "success" : "error",
+        );
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not send the test", "error");
+    } finally {
+      setTestPending(false);
     }
   }
 
@@ -166,7 +286,7 @@ export default function SettingsPage() {
         <section className="max-w-[760px] rounded-[14px] border border-border bg-card p-6 text-sm text-muted-foreground">
           Could not load settings. Is the API running?
         </section>
-      ) : isPending || !form ? (
+      ) : isPending || !form || !settings ? (
         <section className="max-w-[760px] rounded-[14px] border border-border bg-card p-6 text-sm text-muted-foreground">
           Loading settings…
         </section>
@@ -234,7 +354,7 @@ export default function SettingsPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setNotification(toggle.key, !on)}
+                    onClick={() => setPreference(toggle.key, !on)}
                     aria-pressed={on}
                     aria-label={toggle.label}
                     className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
@@ -250,6 +370,142 @@ export default function SettingsPage() {
                 </div>
               );
             })}
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-track pt-4">
+            <div className="flex flex-col gap-1">
+              <h2 className="m-0 text-base font-bold text-foreground">Alert rules</h2>
+              <p className="m-0 text-xs text-muted-foreground">
+                Rules run on every status tick. Each incident opens one alert and resolves itself
+                when the service recovers.
+              </p>
+            </div>
+
+            {ALERT_RULES.map((rule) => {
+              const on = form.notifications.rules[rule.key];
+
+              return (
+                <div
+                  key={rule.key}
+                  className="flex items-center justify-between gap-4 border-t border-track py-3"
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium">{rule.label}</span>
+                    <span className="text-xs text-muted-foreground">{rule.hint}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRule(rule.key, !on)}
+                    aria-pressed={on}
+                    aria-label={rule.label}
+                    className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+                      on ? "bg-brand" : "bg-border2"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-1 size-5 rounded-full transition-[left] ${
+                        on ? "left-6 bg-brand-foreground" : "left-1 bg-fg2"
+                      }`}
+                    />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-col gap-4 border-t border-track pt-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <h2 className="m-0 text-base font-bold text-foreground">Delivery channels</h2>
+                <p className="m-0 text-xs text-muted-foreground">
+                  Optional push to Discord and Telegram. Secrets stay on the API and are never
+                  sent back to this page.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleTest()}
+                disabled={testPending}
+                className="h-9 rounded-[9px] border border-border2 px-3 text-xs font-semibold text-foreground disabled:opacity-60"
+              >
+                {testPending ? "Sending…" : "Send test"}
+              </button>
+            </div>
+
+            <label className={LABEL_CLASS}>
+              <span className="flex flex-wrap items-center gap-2">
+                Discord webhook URL
+                {settings.channels.discord && (
+                  <span className="rounded-full bg-ok-bg px-2 py-0.5 text-[11px] font-semibold text-ok">
+                    Configured
+                  </span>
+                )}
+              </span>
+              <input
+                type="password"
+                autoComplete="off"
+                value={form.notifications.discordWebhookUrl}
+                onChange={(event) => setSecret("discordWebhookUrl", event.target.value)}
+                placeholder={
+                  settings.channels.discord
+                    ? "Saved — leave blank to keep"
+                    : "https://discord.com/api/webhooks/…"
+                }
+                className={`${INPUT_CLASS} font-mono text-[13px]`}
+              />
+              <span className="text-xs font-normal text-muted-foreground">
+                Enter a new URL to replace the saved webhook, or save an empty field to remove it.
+              </span>
+            </label>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className={LABEL_CLASS}>
+                <span className="flex flex-wrap items-center gap-2">
+                  Telegram bot token
+                  {settings.channels.telegram && (
+                    <span className="rounded-full bg-ok-bg px-2 py-0.5 text-[11px] font-semibold text-ok">
+                      Configured
+                    </span>
+                  )}
+                </span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={form.notifications.telegramBotToken}
+                  onChange={(event) => setSecret("telegramBotToken", event.target.value)}
+                  placeholder={
+                    settings.channels.telegram ? "Saved — leave blank to keep" : "123456:ABC…"
+                  }
+                  className={`${INPUT_CLASS} font-mono text-[13px]`}
+                />
+              </label>
+
+              <label className={LABEL_CLASS}>
+                Telegram chat id
+                <input
+                  type="text"
+                  value={form.notifications.telegramChatId}
+                  onChange={(event) =>
+                    setForm((current) =>
+                      current
+                        ? {
+                            ...current,
+                            notifications: {
+                              ...current.notifications,
+                              telegramChatId: event.target.value,
+                            },
+                          }
+                        : current,
+                    )
+                  }
+                  placeholder="-1001234567890"
+                  className={`${INPUT_CLASS} font-mono text-[13px]`}
+                />
+              </label>
+            </div>
+            <p className="m-0 text-xs text-muted-foreground">
+              “Send test” uses the saved channels, so save first.
+            </p>
           </div>
 
           <div className="flex items-center gap-3">

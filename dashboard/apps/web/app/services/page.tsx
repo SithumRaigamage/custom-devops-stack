@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ComposeStacksTable } from "@/components/ComposeStacksTable";
+import { HousekeepingCard } from "@/components/HousekeepingCard";
 import { LogsDrawer } from "@/components/LogsDrawer";
 import { PageHeader } from "@/components/PageHeader";
 import { ServiceGrid } from "@/components/ServiceGrid";
@@ -40,6 +41,7 @@ export default function ServicesPage() {
             onViewLogs={setLogsFor}
           />
           <ComposeStacksTable services={filtered} />
+          <HousekeepingCard />
         </>
       )}
 

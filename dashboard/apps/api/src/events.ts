@@ -1,42 +1,12 @@
-import type { ServerResponse } from "node:http";
 import { activity, db } from "./db.js";
 import { isDockerAvailable, listContainersByProject, projectNameForFolder } from "./docker.js";
 import type { Service } from "./services.js";
 import { getServiceDetails, type ServiceDetail, type Status } from "./status.js";
 import { getSettings } from "./settings.js";
+import { evaluateAlerts } from "./alerts.js";
+import { broadcast } from "./sse.js";
 
-// ---------------------------------------------------------------------------
-// SSE clients
-// ---------------------------------------------------------------------------
-
-const clients = new Set<ServerResponse>();
-let heartbeat: NodeJS.Timeout | null = null;
-
-function ensureHeartbeat(): void {
-  if (heartbeat) return;
-  heartbeat = setInterval(() => {
-    for (const res of clients) {
-      if (!res.writableEnded) res.write(": ping\n\n");
-    }
-  }, 15000);
-  heartbeat.unref?.();
-}
-
-export function addEventClient(res: ServerResponse): () => void {
-  clients.add(res);
-  ensureHeartbeat();
-
-  return () => {
-    clients.delete(res);
-  };
-}
-
-export function broadcast(event: string, data: unknown): void {
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const res of clients) {
-    if (!res.writableEnded) res.write(payload);
-  }
-}
+export { addEventClient, broadcast } from "./sse.js";
 
 // ---------------------------------------------------------------------------
 // Activity
@@ -122,7 +92,11 @@ export function startServiceMonitor(services: Service[]): void {
     ticking = true;
 
     try {
-      if (!(await isDockerAvailable())) return;
+      if (!(await isDockerAvailable())) {
+        // No container status to judge, but the external rules still run.
+        await evaluateAlerts([]);
+        return;
+      }
 
       const byProject = await listContainersByProject();
       const details = await Promise.all(
@@ -132,6 +106,9 @@ export function startServiceMonitor(services: Service[]): void {
       );
 
       broadcast("stats", { ts: Date.now(), services: details });
+
+      // Alert rules run on every status tick, independent of the UI.
+      await evaluateAlerts(details);
 
       for (const detail of details) {
         const current = signature(detail);

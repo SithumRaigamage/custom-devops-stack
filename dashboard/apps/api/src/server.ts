@@ -5,12 +5,21 @@ import { loadServices } from "./services.js";
 import { getServiceDetails } from "./status.js";
 import { isDockerAvailable, listContainersByProject, projectNameForFolder } from "./docker.js";
 import { authRoutes } from "./auth.js";
-import { addEventClient, startServiceMonitor } from "./events.js";
+import { startServiceMonitor } from "./events.js";
+import { addEventClient } from "./sse.js";
+import {
+  listAlerts,
+  markAlertRead,
+  markAllAlertsRead,
+  sendTestNotification,
+  setIntentionalStop,
+} from "./alerts.js";
 import { parseMetricsRange, readMetricsRange, startMetricsSampler } from "./metrics.js";
 import {
   getSettings,
-  updateSettings,
+  publicSettings,
   SettingsUpdateSchema,
+  updateSettings,
 } from "./settings.js";
 import {
   createService,
@@ -20,6 +29,15 @@ import {
   RegistryError,
   updateService,
 } from "./registry.js";
+import {
+  createImageBackup,
+  HousekeepingError,
+  listDockerBackups,
+  pruneDangling,
+  prunePreview,
+  readDiskUsage,
+  restoreImageBackup,
+} from "./housekeeping.js";
 
 const HOST = "127.0.0.1";
 const PORT = 4000;
@@ -79,6 +97,10 @@ app.post<{ Params: { id: string; action: string } }>(
       return reply.code(404).send({ error: `Unknown action "${action}"` });
     }
 
+    // A stop the user asked for is not an incident; the next start/restart clears it.
+    if (action === "stop") setIntentionalStop(service.id, true);
+    else setIntentionalStop(service.id, false);
+
     try {
       const { stdout, stderr } = await runCompose(
         service,
@@ -87,6 +109,7 @@ app.post<{ Params: { id: string; action: string } }>(
       );
       return { id: service.id, action, ok: true, output: (stdout + stderr).trim() };
     } catch (err) {
+      if (action === "stop") setIntentionalStop(service.id, false);
       req.log.error(err);
       const detail = err as { stderr?: string; message: string };
       return reply
@@ -130,7 +153,7 @@ await authRoutes(app);
 
 app.get("/api/settings", async (req, reply) => {
   try {
-    return await getSettings();
+    return publicSettings(await getSettings());
   } catch (err) {
     req.log.error(err);
     return reply.code(503).send({ error: "settings_unavailable" });
@@ -144,10 +167,70 @@ app.put("/api/settings", async (req, reply) => {
   }
 
   try {
-    return await updateSettings(parsed.data);
+    return publicSettings(await updateSettings(parsed.data));
   } catch (err) {
     req.log.error(err);
     return reply.code(503).send({ error: "settings_unavailable" });
+  }
+});
+
+// ---- Alerts ---------------------------------------------------------------
+
+app.get<{ Querystring: { limit?: string } }>("/api/alerts", async (req, reply) => {
+  const raw = req.query.limit;
+  const limit = raw === undefined ? 50 : Number(raw);
+
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+    return reply.code(400).send({ error: "limit must be an integer from 1 to 200" });
+  }
+
+  try {
+    return await listAlerts(limit);
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(503).send({ error: "alerts_unavailable" });
+  }
+});
+
+app.post("/api/alerts/read", async (req, reply) => {
+  try {
+    const count = await markAllAlertsRead();
+    return { ok: true, count };
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(503).send({ error: "alerts_unavailable" });
+  }
+});
+
+app.post<{ Params: { id: string } }>("/api/alerts/:id/read", async (req, reply) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id < 1) {
+    return reply.code(400).send({ error: "Invalid alert id" });
+  }
+
+  try {
+    const updated = await markAlertRead(id);
+    if (!updated) return reply.code(404).send({ error: `Unknown alert "${req.params.id}"` });
+    return { ok: true };
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(503).send({ error: "alerts_unavailable" });
+  }
+});
+
+app.post("/api/notifications/test", async (req, reply) => {
+  try {
+    const result = await sendTestNotification();
+    if (result.discord === "not_configured" && result.telegram === "not_configured") {
+      return reply.code(400).send({
+        error: "Configure a Discord webhook or a Telegram token and chat id first",
+        ...result,
+      });
+    }
+    return result;
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(503).send({ error: "notification_test_failed" });
   }
 });
 
@@ -199,6 +282,81 @@ app.delete<{ Params: { id: string } }>("/api/registry/services/:id", async (req,
   }
 });
 
+// ---- Docker housekeeping --------------------------------------------------
+
+function sendHousekeepingError(reply: FastifyReply, err: unknown): FastifyReply {
+  if (err instanceof HousekeepingError) {
+    return reply.code(err.status).send({ error: err.message });
+  }
+  return reply.code(500).send({ error: err instanceof Error ? err.message : "housekeeping_error" });
+}
+
+app.get("/api/docker/disk", async (req, reply) => {
+  if (!(await isDockerAvailable())) {
+    return reply.code(503).send({ error: "docker_unavailable" });
+  }
+  try {
+    return await readDiskUsage();
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(500).send({ error: "Could not read Docker disk usage" });
+  }
+});
+
+app.get("/api/docker/backups", async (_req, reply) => {
+  try {
+    return await listDockerBackups();
+  } catch (err) {
+    return sendHousekeepingError(reply, err);
+  }
+});
+
+app.post<{ Params: { serviceId: string } }>(
+  "/api/docker/backups/:serviceId",
+  async (req, reply) => {
+    try {
+      return reply.code(201).send(await createImageBackup(req.params.serviceId));
+    } catch (err) {
+      return sendHousekeepingError(reply, err);
+    }
+  },
+);
+
+app.post<{ Params: { serviceId: string }; Body: { name?: unknown } }>(
+  "/api/docker/backups/:serviceId/restore",
+  async (req, reply) => {
+    try {
+      return await restoreImageBackup(req.params.serviceId, req.body?.name);
+    } catch (err) {
+      return sendHousekeepingError(reply, err);
+    }
+  },
+);
+
+app.get("/api/docker/prune", async (req, reply) => {
+  if (!(await isDockerAvailable())) {
+    return reply.code(503).send({ error: "docker_unavailable" });
+  }
+  try {
+    return await prunePreview();
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(500).send({ error: "Could not build a prune preview" });
+  }
+});
+
+app.post("/api/docker/prune", async (req, reply) => {
+  if (!(await isDockerAvailable())) {
+    return reply.code(503).send({ error: "docker_unavailable" });
+  }
+  try {
+    return await pruneDangling();
+  } catch (err) {
+    req.log.error(err);
+    return reply.code(500).send({ error: "Could not prune Docker data" });
+  }
+});
+
 // ---- Metrics --------------------------------------------------------------
 
 app.get<{ Querystring: { range?: string } }>("/api/metrics", async (req, reply) => {
@@ -211,7 +369,7 @@ app.get<{ Querystring: { range?: string } }>("/api/metrics", async (req, reply) 
   }
 });
 
-// ---- Activity stream ------------------------------------------------------
+// ---- Event stream ---------------------------------------------------------
 
 app.get("/api/events", async (req, reply) => {
   reply.hijack();

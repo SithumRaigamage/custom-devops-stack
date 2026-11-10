@@ -2,13 +2,34 @@
 
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { EVENTS_URL, type Service } from "./api";
+import { EVENTS_URL, fetchSettings, type Alert, type Service } from "./api";
 import { ACTIVITY_QUERY_KEY } from "./use-activity";
+import { ALERTS_QUERY_KEY } from "./use-alerts";
 import { POLL_INTERVAL_MS, SERVICES_QUERY_KEY } from "./use-services";
 
 interface StatsEvent {
   ts: number;
   services?: Service[];
+}
+
+/** Show an OS notification only while the tab is hidden and the user opted in. */
+function notifyIfHidden(alert: Alert): void {
+  if (typeof window === "undefined" || typeof Notification === "undefined") return;
+  if (Notification.permission !== "granted") return;
+  if (document.visibilityState !== "hidden") return;
+
+  void fetchSettings()
+    .then((settings) => {
+      if (!settings.notifications.desktop) return;
+      if (document.visibilityState !== "hidden") return;
+      new Notification("StackPilot alert", {
+        body: alert.message,
+        tag: alert.incidentKey,
+      });
+    })
+    .catch(() => {
+      // Settings unavailable: skip the notification rather than guess.
+    });
 }
 
 /**
@@ -34,6 +55,7 @@ export function useEvents() {
     const refreshAll = () => {
       void queryClient.invalidateQueries({ queryKey: SERVICES_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: ACTIVITY_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: ALERTS_QUERY_KEY });
     };
 
     const startPolling = () => {
@@ -49,7 +71,6 @@ export function useEvents() {
 
     const source$ = new EventSource(EVENTS_URL);
     source = source$;
-
 
     source$.onopen = () => {
       setReconnecting(false);
@@ -84,6 +105,24 @@ export function useEvents() {
 
     source$.addEventListener("activity.created", () => {
       void queryClient.invalidateQueries({ queryKey: ACTIVITY_QUERY_KEY });
+    });
+
+    source$.addEventListener("alert.created", (event) => {
+      try {
+        const alert = JSON.parse((event as MessageEvent).data) as Alert;
+        void queryClient.invalidateQueries({ queryKey: ALERTS_QUERY_KEY });
+        notifyIfHidden(alert);
+      } catch {
+        // Ignore malformed frames.
+      }
+    });
+
+    source$.addEventListener("alert.resolved", () => {
+      void queryClient.invalidateQueries({ queryKey: ALERTS_QUERY_KEY });
+    });
+
+    source$.addEventListener("alerts.changed", () => {
+      void queryClient.invalidateQueries({ queryKey: ALERTS_QUERY_KEY });
     });
 
     return () => {

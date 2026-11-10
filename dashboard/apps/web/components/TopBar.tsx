@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, KeyRound, LogOut, Moon, Play, Search, Square, Sun } from "lucide-react";
+import { Bell, Check, KeyRound, LogOut, Moon, Play, Search, Square, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { changePassword, fetchAuthStatus, logout } from "@/lib/api";
-import { activityDot, relativeTime } from "@/lib/activity";
-import { useActivity } from "@/lib/use-activity";
+import { relativeTime } from "@/lib/activity";
+import { useAlerts, useMarkAlertRead, useMarkAllAlertsRead } from "@/lib/use-alerts";
 import { useEvents } from "@/lib/use-events";
+import { CommandPalette } from "./CommandPalette";
 import { useSearch } from "./search-provider";
 import { useTheme } from "./theme-provider";
 import { ThemePicker } from "./ThemePicker";
@@ -35,30 +37,30 @@ export function TopBar({ onStartAll, onStopAll }: TopBarProps) {
 
   // One EventSource for the whole dashboard, mounted with the top bar.
   const { reconnecting } = useEvents();
-  const { data: activity = [] } = useActivity(50);
-  const latestActivityId = activity[0]?.id ?? null;
-  const [seenActivityId, setSeenActivityId] = useState<number | null>(null);
+  const { data: alertsData } = useAlerts();
+  const alerts = alertsData?.alerts ?? [];
+  const unread = alertsData?.unread ?? 0;
+  const markRead = useMarkAlertRead();
+  const markAllRead = useMarkAllAlertsRead();
+  const [permission, setPermission] = useState<NotificationPermission | null>(null);
 
   const [open, setOpen] = useState<"theme" | "notifications" | "user" | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (latestActivityId === null) return;
-    setSeenActivityId((current) => current ?? latestActivityId);
-  }, [latestActivityId]);
+    if (typeof Notification !== "undefined") setPermission(Notification.permission);
+  }, []);
 
-  // Keep the badge cleared while the popover is open.
-  useEffect(() => {
-    if (open === "notifications" && latestActivityId !== null) {
-      setSeenActivityId(latestActivityId);
+  async function requestDesktopPermission() {
+    if (typeof Notification === "undefined") return;
+    try {
+      setPermission(await Notification.requestPermission());
+    } catch {
+      // Some browsers refuse the prompt outright; the button stays available.
     }
-  }, [open, latestActivityId]);
-
-  const unread =
-    seenActivityId === null
-      ? 0
-      : activity.filter((item) => item.id > seenActivityId).length;
+  }
 
   // Real username from the session.
   const [username, setUsername] = useState<string | null>(null);
@@ -99,12 +101,7 @@ export function TopBar({ onStartAll, onStopAll }: TopBarProps) {
   }, [open]);
 
   function toggleNotifications() {
-    if (open === "notifications") {
-      setOpen(null);
-      return;
-    }
-    setSeenActivityId(latestActivityId);
-    setOpen("notifications");
+    setOpen((current) => (current === "notifications" ? null : "notifications"));
   }
 
   // ---- Change password dialog ----
@@ -175,20 +172,25 @@ export function TopBar({ onStartAll, onStopAll }: TopBarProps) {
 
   return (
     <header className="flex flex-wrap items-center gap-3 border-b border-border bg-background px-7 py-3.5">
-      <label className="flex h-[42px] flex-[1_1_260px] items-center gap-2.5 rounded-[10px] border border-border2 bg-card2 px-3.5 text-muted-foreground">
+      <div className="flex h-[42px] flex-[1_1_260px] items-center gap-2.5 rounded-[10px] border border-border2 bg-card2 px-3.5 text-muted-foreground">
         <Search className="size-4 shrink-0" strokeWidth={2} aria-hidden="true" />
-        <span className="sr-only">Search services</span>
         <input
           type="search"
+          aria-label="Search services"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search services, builds, logs…"
           className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
-        <kbd className="rounded-[5px] border border-border2 px-1.5 py-px font-mono text-[11px] text-muted-foreground">
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          aria-label="Open command palette"
+          className="rounded-[5px] border border-border2 px-1.5 py-px font-mono text-[11px] text-muted-foreground transition-colors hover:border-brand-border hover:text-brand-text"
+        >
           ⌘K
-        </kbd>
-      </label>
+        </button>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -244,37 +246,91 @@ export function TopBar({ onStartAll, onStopAll }: TopBarProps) {
           <button
             type="button"
             onClick={toggleNotifications}
-            aria-label="Notifications"
+            aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"}
             aria-expanded={open === "notifications"}
             className="relative inline-flex h-[42px] w-[44px] items-center justify-center rounded-[10px] border border-border2 bg-card2 text-fg2"
           >
             <Bell className="size-[18px]" strokeWidth={1.9} aria-hidden="true" />
             {unread > 0 && (
               <span className="absolute right-[7px] top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-extrabold text-brand-foreground">
-                {unread}
+                {unread > 9 ? "9+" : unread}
               </span>
             )}
           </button>
 
           {open === "notifications" && (
-            <div className="absolute right-0 top-[50px] z-30 w-[320px] max-w-[86vw] rounded-[12px] border border-border2 bg-card2 p-2 shadow-[var(--shadow-popover-strong)] max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto max-sm:w-auto max-sm:max-w-none">
-              <div className="px-2.5 py-2 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                Notifications
+            <div className="absolute right-0 top-[50px] z-30 w-[340px] max-w-[86vw] rounded-[12px] border border-border2 bg-card2 p-2 shadow-[var(--shadow-popover-strong)] max-sm:fixed max-sm:inset-x-4 max-sm:bottom-4 max-sm:top-auto max-sm:w-auto max-sm:max-w-none">
+              <div className="flex items-center justify-between gap-2 px-2.5 py-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                  Alerts
+                </span>
+                {unread > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => markAllRead.mutate()}
+                    disabled={markAllRead.isPending}
+                    className="text-[11px] font-semibold text-brand-text disabled:opacity-60"
+                  >
+                    Mark all read
+                  </button>
+                )}
               </div>
-              {activity.length === 0 ? (
-                <p className="px-2.5 py-2 text-xs text-muted-foreground">No activity yet.</p>
+
+              {permission === "default" && (
+                <button
+                  type="button"
+                  onClick={() => void requestDesktopPermission()}
+                  className="mb-1 w-full rounded-lg border border-border2 px-2.5 py-2 text-left text-[12px] text-foreground hover:bg-brand-soft"
+                >
+                  Enable desktop alerts
+                </button>
+              )}
+
+              {alerts.length === 0 ? (
+                <p className="px-2.5 py-2 text-xs text-muted-foreground">
+                  No alerts. Your stack is quiet.
+                </p>
               ) : (
-                activity.slice(0, 4).map((item) => (
-                  <div key={item.id} className="flex gap-2.5 rounded-lg p-2.5">
+                alerts.slice(0, 6).map((alert) => (
+                  <div
+                    key={alert.id}
+                    className="flex gap-2.5 rounded-lg p-2.5 hover:bg-brand-soft"
+                  >
                     <span
-                      className={cn("mt-1.5 size-2 shrink-0 rounded-full", activityDot(item.kind))}
+                      className={cn(
+                        "mt-1.5 size-2 shrink-0 rounded-full",
+                        alert.severity === "bad"
+                          ? "bg-bad"
+                          : alert.severity === "warn"
+                            ? "bg-warn"
+                            : "bg-info",
+                      )}
                     />
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[13px] text-foreground">{item.message}</span>
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={alert.link ?? "/"}
+                        className={cn(
+                          "block text-[13px] no-underline",
+                          alert.resolvedAt ? "text-muted-foreground" : "text-foreground",
+                        )}
+                      >
+                        {alert.message}
+                      </Link>
                       <span className="text-xs text-muted-foreground">
-                        {relativeTime(item.ts)} · {item.actor}
+                        {relativeTime(alert.ts)} ·{" "}
+                        {alert.resolvedAt ? "Resolved" : alert.read ? "Read" : "Unread"}
                       </span>
                     </div>
+                    {!alert.read && !alert.resolvedAt && (
+                      <button
+                        type="button"
+                        onClick={() => markRead.mutate(alert.id)}
+                        aria-label={`Mark "${alert.message}" as read`}
+                        className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-card hover:text-foreground"
+                      >
+                        <Check className="size-3.5" strokeWidth={2.4} aria-hidden="true" />
+                      </button>
+                    )}
                   </div>
                 ))
               )}
@@ -435,6 +491,8 @@ export function TopBar({ onStartAll, onStopAll }: TopBarProps) {
           </div>
         </div>
       )}
+
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
     </header>
   );
 }

@@ -9,8 +9,8 @@ import {
   fetchSettings,
   saveSettings,
   updateRegistryService,
-  type AppSettings,
   type ServiceInput,
+  type SettingsPatch,
 } from "./api";
 
 export const SETTINGS_QUERY_KEY = ["settings"] as const;
@@ -28,7 +28,7 @@ export function useSaveSettings() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (patch: Partial<AppSettings>) => saveSettings(patch),
+    mutationFn: (patch: SettingsPatch) => saveSettings(patch),
     onSuccess: (data) => {
       queryClient.setQueryData(SETTINGS_QUERY_KEY, data);
       // Stack root may have changed, so folders need re-listing.

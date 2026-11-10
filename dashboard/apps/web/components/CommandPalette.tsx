@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Cpu,
-  GitBranch,
   Hammer,
   LayoutDashboard,
   LogOut,
@@ -15,7 +13,6 @@ import {
   Play,
   RefreshCw,
   Server,
-  ShieldCheck,
   SlidersHorizontal,
   Square,
   Sun,
@@ -28,6 +25,7 @@ import {
   type Service,
   type ServiceAction,
 } from "@/lib/api";
+import { useIntegrationServiceId } from "@/lib/use-settings";
 import { useJenkinsBuilds, useRebuildJob } from "@/lib/use-jenkins";
 import { SERVICES_QUERY_KEY, useServices } from "@/lib/use-services";
 import { cn } from "@/lib/utils";
@@ -50,9 +48,6 @@ const EMPTY_SERVICES: Service[] = [];
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/services", label: "Services", icon: Server },
-  { href: "/jenkins", label: "Jenkins", icon: GitBranch },
-  { href: "/sonarqube", label: "SonarQube", icon: ShieldCheck },
-  { href: "/ollama", label: "Ollama", icon: Cpu },
   { href: "/assistant", label: "AI Assistant", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: SlidersHorizontal },
 ];
@@ -133,8 +128,9 @@ export function CommandPalette({
   const { toast } = useToast();
   const { theme, themes, dark, setTheme, toggleMode } = useTheme();
   const { data: services = EMPTY_SERVICES } = useServices();
-  const { data: jenkins } = useJenkinsBuilds({ enabled: open });
-  const rebuild = useRebuildJob();
+  const jenkinsId = useIntegrationServiceId("jenkins");
+  const { data: jenkins } = useJenkinsBuilds(jenkinsId, { enabled: open });
+  const rebuild = useRebuildJob(jenkinsId);
 
   const serviceAction = useMutation({
     mutationFn: ({ serviceId, verb }: { serviceId: string; verb: ServiceAction }) =>

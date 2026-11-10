@@ -3,11 +3,17 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { useToast } from "@/components/toast";
+import { SERVICE_ICON_OPTIONS } from "@/lib/service-icons";
 import {
   sendTestNotification,
+  testIntegrationConnection,
   testRegistryService,
+  testServiceCommand,
   type AlertRuleToggles,
   type ChannelResult,
+  type CommandTestResult,
+  type IntegrationKind,
+  type IntegrationTestResult,
   type NotificationPreferences,
   type RegistryFolder,
   type RegistryService,
@@ -81,15 +87,7 @@ const ALERT_RULES: {
   },
 ];
 
-const ICON_OPTIONS = [
-  { value: "server", label: "Server" },
-  { value: "git-branch", label: "Git branch" },
-  { value: "shield-check", label: "Shield" },
-  { value: "message-square", label: "Chat" },
-  { value: "database", label: "Database" },
-  { value: "globe", label: "Globe" },
-  { value: "box", label: "Box" },
-];
+const ICON_OPTIONS = SERVICE_ICON_OPTIONS;
 
 const INPUT_CLASS =
   "h-11 w-full rounded-[10px] border border-border2 bg-field px-3.5 text-sm text-foreground";
@@ -115,6 +113,110 @@ interface ServiceForm {
   stopCmd: string;
   restartCmd: string;
   logsCmd: string;
+  runInShell: boolean;
+  integration: IntegrationKind;
+  integrationUrl: string;
+  integrationUser: string;
+  integrationHeader: string;
+  /** Write-only; blank keeps the saved credential. */
+  integrationSecret: string;
+}
+
+const INTEGRATION_OPTIONS: { value: IntegrationKind; label: string; defaultUrl: string }[] = [
+  { value: "none", label: "None", defaultUrl: "" },
+  { value: "jenkins", label: "Jenkins", defaultUrl: "http://127.0.0.1:8080" },
+  { value: "sonarqube", label: "SonarQube", defaultUrl: "http://127.0.0.1:9000" },
+  { value: "ollama", label: "Ollama", defaultUrl: "http://127.0.0.1:11434" },
+  { value: "generic_http", label: "Generic HTTP", defaultUrl: "http://127.0.0.1" },
+];
+
+const TEST_LABEL: Record<IntegrationTestResult["result"], string> = {
+  connected: "Connected",
+  wrong_token: "Wrong token",
+  unreachable: "Unreachable",
+  error: "Error",
+};
+
+/** Token field that never shows the stored value: "Saved" with Replace / Remove. */
+function SecretField({
+  label,
+  saved,
+  removed,
+  value,
+  onChange,
+  onRemove,
+  onUndoRemove,
+  placeholder,
+}: {
+  label: string;
+  saved: boolean;
+  removed: boolean;
+  value: string;
+  onChange: (value: string) => void;
+  onRemove: () => void;
+  onUndoRemove: () => void;
+  placeholder?: string;
+}) {
+  const [replacing, setReplacing] = useState(false);
+
+  if (saved && !removed && !replacing) {
+    return (
+      <div className={LABEL_CLASS}>
+        {label}
+        <div className="flex items-center gap-2">
+          <span className="inline-flex h-11 flex-1 items-center rounded-[10px] border border-border2 bg-field px-3.5 text-sm font-normal text-muted-foreground">
+            ✓ Saved (encrypted, never shown)
+          </span>
+          <button type="button" onClick={() => setReplacing(true)} className="h-11 rounded-[10px] border border-border2 px-3 text-[13px] font-semibold text-foreground">
+            Replace
+          </button>
+          <button type="button" onClick={onRemove} className="h-11 rounded-[10px] border border-border2 px-3 text-[13px] font-semibold text-bad">
+            Remove
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (saved && removed) {
+    return (
+      <div className={LABEL_CLASS}>
+        {label}
+        <div className="flex items-center gap-2 text-[13px] font-normal text-muted-foreground">
+          The saved value will be removed when you save.
+          <button type="button" onClick={onUndoRemove} className="font-semibold text-brand-text">
+            Undo
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <label className={LABEL_CLASS}>
+      {label}
+      <input
+        type="password"
+        autoComplete="new-password"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className={INPUT_CLASS}
+      />
+      {replacing && (
+        <button
+          type="button"
+          onClick={() => {
+            onChange("");
+            setReplacing(false);
+          }}
+          className="self-start text-xs font-semibold text-brand-text"
+        >
+          Keep the saved value
+        </button>
+      )}
+    </label>
+  );
 }
 
 function healthPathFor(service?: RegistryService): string {
@@ -674,33 +776,71 @@ function ServiceDialog({
     stopCmd: service?.stopCmd ?? "",
     restartCmd: service?.restartCmd ?? "",
     logsCmd: service?.logsCmd ?? "",
+    runInShell: service?.runInShell ?? false,
+    integration: service?.integration ?? "none",
+    integrationUrl: service?.integrationUrl ?? "",
+    integrationUser: service?.integrationUser ?? "",
+    integrationHeader: service?.integrationHeader ?? "",
+    integrationSecret: "",
   }));
   const [error, setError] = useState<string | null>(null);
+  const [removeCredential, setRemoveCredential] = useState(false);
+  const [connTest, setConnTest] = useState<IntegrationTestResult | null>(null);
+  const [connTesting, setConnTesting] = useState(false);
+  const [cmdTest, setCmdTest] = useState<(CommandTestResult & { label: string }) | null>(null);
+  const [cmdTesting, setCmdTesting] = useState<string | null>(null);
 
   function update<K extends keyof ServiceForm>(key: K, value: ServiceForm[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function buildInput(): ServiceInput {
+    const kind = form.integration;
+    const secret = form.integrationSecret;
+    return {
+      name: form.name.trim(),
+      description: form.description.trim(),
+      folder: form.folder,
+      type: form.type,
+      composeFile: form.composeFile.trim() || "docker-compose.yml",
+      port: Number(form.port),
+      url: form.url.trim(),
+      healthUrl: form.healthUrl.trim() || undefined,
+      icon: form.icon,
+      ...(form.startCmd ? { startCmd: form.startCmd } : {}),
+      ...(form.stopCmd ? { stopCmd: form.stopCmd } : {}),
+      ...(form.restartCmd ? { restartCmd: form.restartCmd } : {}),
+      ...(form.logsCmd ? { logsCmd: form.logsCmd } : {}),
+      runInShell: form.runInShell,
+      integration: kind,
+      ...(kind !== "none" ? { integrationUrl: form.integrationUrl.trim() } : {}),
+      ...(kind === "jenkins" ? { integrationUser: form.integrationUser.trim() } : {}),
+      ...(kind === "generic_http" && form.integrationHeader.trim()
+        ? { integrationHeader: form.integrationHeader.trim() }
+        : {}),
+      ...(secret && kind !== "none" && kind !== "ollama" ? { integrationSecret: secret } : {}),
+      ...(removeCredential ? { removeCredential: true } : {}),
+    };
+  }
+
+  function chooseIntegration(kind: IntegrationKind) {
+    const option = INTEGRATION_OPTIONS.find((item) => item.value === kind);
+    setConnTest(null);
+    setForm((current) => ({
+      ...current,
+      integration: kind,
+      integrationUrl: current.integrationUrl || option?.defaultUrl || "",
+    }));
   }
 
   async function handleTest() {
     setError(null);
     setTesting(true);
     try {
-      const result = await testRegistryService({
-        name: form.name.trim(),
-        description: form.description.trim(),
-        folder: form.folder,
-        type: form.type,
-        composeFile: form.composeFile.trim() || "docker-compose.yml",
-        port: Number(form.port),
-        url: form.url.trim(),
-        healthUrl: form.healthUrl.trim() || undefined,
-        healthPath: "/",
-        icon: form.icon,
-        ...(form.startCmd ? { startCmd: form.startCmd } : {}),
-        ...(form.stopCmd ? { stopCmd: form.stopCmd } : {}),
-        ...(form.restartCmd ? { restartCmd: form.restartCmd } : {}),
-        ...(form.logsCmd ? { logsCmd: form.logsCmd } : {}),
-      });
+      // Folder / compose / health check only; integration is tested with its own button.
+      const { integration: _i, integrationUrl: _u, integrationUser: _n, integrationHeader: _h, integrationSecret: _s, removeCredential: _r, ...rest } = buildInput();
+      void [_i, _u, _n, _h, _s, _r];
+      const result = await testRegistryService(rest);
       if (!result.folder || !result.composeFile || !result.health) {
         setError(`Test failed: folder ${result.folder ? "ok" : "missing"}, compose file ${result.composeFile ? "ok" : "missing"}, health ${result.health ? "ok" : "no response"}`);
       } else {
@@ -710,6 +850,55 @@ function ServiceDialog({
       setError(err instanceof Error ? err.message : "Service test failed");
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function handleTestCommand(label: string, command: string) {
+    setCmdTesting(label);
+    setCmdTest(null);
+    try {
+      const result = await testServiceCommand({
+        id: service?.id,
+        folder: form.folder,
+        command,
+        runInShell: form.runInShell,
+      });
+      setCmdTest({ ...result, label });
+    } catch (err) {
+      setCmdTest({
+        ok: false,
+        mode: form.runInShell ? "shell" : "exec",
+        command,
+        output: "",
+        error: err instanceof Error ? err.message : "Command test failed",
+        label,
+      });
+    } finally {
+      setCmdTesting(null);
+    }
+  }
+
+  async function handleTestConnection() {
+    if (form.integration === "none") return;
+    setConnTesting(true);
+    setConnTest(null);
+    try {
+      setConnTest(
+        await testIntegrationConnection({
+          serviceId: removeCredential ? undefined : service?.id,
+          integration: form.integration,
+          integrationUrl: form.integrationUrl.trim(),
+          ...(form.integration === "jenkins" ? { integrationUser: form.integrationUser.trim() } : {}),
+          ...(form.integration === "generic_http" && form.integrationHeader.trim()
+            ? { integrationHeader: form.integrationHeader.trim() }
+            : {}),
+          ...(form.integrationSecret ? { integrationSecret: form.integrationSecret } : {}),
+        }),
+      );
+    } catch (err) {
+      setConnTest({ ok: false, result: "error", message: err instanceof Error ? err.message : "Test failed" });
+    } finally {
+      setConnTesting(false);
     }
   }
 
@@ -724,21 +913,7 @@ function ServiceDialog({
       return setError("Port must be a whole number between 1 and 65535");
     }
 
-    const input: ServiceInput = {
-      name: form.name.trim(),
-      description: form.description.trim(),
-      folder: form.folder,
-      type: form.type,
-      composeFile: form.composeFile.trim() || "docker-compose.yml",
-      port,
-      url: form.url.trim(),
-      healthUrl: form.healthUrl.trim() || undefined,
-      icon: form.icon,
-      ...(form.startCmd ? { startCmd: form.startCmd } : {}),
-      ...(form.stopCmd ? { stopCmd: form.stopCmd } : {}),
-      ...(form.restartCmd ? { restartCmd: form.restartCmd } : {}),
-      ...(form.logsCmd ? { logsCmd: form.logsCmd } : {}),
-    };
+    const input = buildInput();
 
     try {
       if (service) {
@@ -765,7 +940,7 @@ function ServiceDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="service-dialog-title"
-        className="max-h-[90vh] w-full max-w-[520px] overflow-y-auto rounded-[14px] border border-border bg-card p-6 shadow-[var(--shadow-popover)]"
+        className="max-h-[90vh] w-full max-w-[600px] overflow-y-auto rounded-[14px] border border-border bg-card p-6 shadow-[var(--shadow-popover)]"
       >
         <h2 id="service-dialog-title" className="m-0 text-lg font-bold text-foreground">
           {service ? `Edit ${service.name}` : "Add service"}
@@ -898,24 +1073,180 @@ function ServiceDialog({
             </span>
           </label>
 
-          {form.type === "custom" && <div className="grid gap-4 sm:grid-cols-2">
-            <label className={LABEL_CLASS}>
-              Start command
-              <input value={form.startCmd} onChange={(event) => update("startCmd", event.target.value)} className={INPUT_CLASS} />
+          <div className="flex flex-col gap-2 rounded-[10px] border border-border2 bg-card2 p-3.5">
+            <label className="flex items-center gap-2.5 text-[13px] font-semibold text-foreground">
+              <input
+                type="checkbox"
+                checked={form.runInShell}
+                onChange={(event) => update("runInShell", event.target.checked)}
+                className="size-4"
+              />
+              Run commands in a shell (<code className="font-mono text-xs">/bin/zsh -i -c</code>)
             </label>
+            <p className="m-0 text-xs text-muted-foreground">
+              Loads your <code className="font-mono">~/.zshrc</code>, so aliases and functions work.
+            </p>
+            {form.runInShell && (
+              <p role="note" className="m-0 rounded-[8px] border border-warn-bg bg-warn-bg px-2.5 py-2 text-xs text-warn">
+                Warning: shell mode runs each command exactly as typed, with pipes, redirects and
+                expansions interpreted by zsh. Only enter commands you trust. Every run is recorded
+                in the audit log.
+              </p>
+            )}
+          </div>
+
+          {(form.type === "custom" || form.runInShell) && (
+            <div className="flex flex-col gap-3">
+              {form.type === "compose" && (
+                <p className="m-0 text-xs text-muted-foreground">
+                  Compose services use <code className="font-mono">docker compose</code> unless a
+                  command below is set while shell mode is on.
+                </p>
+              )}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {([
+                  ["startCmd", "Start command"],
+                  ["stopCmd", "Stop command"],
+                  ["restartCmd", "Restart command"],
+                  ["logsCmd", "Logs command"],
+                ] as const).map(([key, label]) => (
+                  <div key={key} className={LABEL_CLASS}>
+                    <label htmlFor={`cmd-${key}`}>{label}</label>
+                    <div className="flex gap-2">
+                      <input
+                        id={`cmd-${key}`}
+                        value={form[key]}
+                        onChange={(event) => update(key, event.target.value)}
+                        className={`${INPUT_CLASS} font-mono text-[13px]`}
+                        spellCheck={false}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleTestCommand(label, form[key])}
+                        disabled={!form[key].trim() || cmdTesting !== null}
+                        className="h-11 shrink-0 rounded-[10px] border border-border2 px-3 text-[13px] font-semibold text-foreground disabled:opacity-50"
+                      >
+                        {cmdTesting === label ? "Running…" : "Test"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {cmdTest && (
+                <div
+                  role="status"
+                  className={`rounded-[10px] border p-3 text-xs ${cmdTest.ok ? "border-ok/40 bg-ok-bg" : "border-bad/40 bg-bad-bg"}`}
+                >
+                  <div className="font-semibold text-foreground">
+                    {cmdTest.label}: {cmdTest.ok ? "succeeded" : "failed"} ·{" "}
+                    {cmdTest.mode === "shell" ? "zsh -i -c" : "no shell"}
+                  </div>
+                  {cmdTest.error && <div className="mt-1 text-bad">{cmdTest.error}</div>}
+                  {cmdTest.output && (
+                    <pre className="m-0 mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-foreground">
+                      {cmdTest.output}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <fieldset className="m-0 flex flex-col gap-4 rounded-[10px] border border-border2 p-3.5">
+            <legend className="px-1.5 text-[13px] font-semibold text-foreground">Integration</legend>
             <label className={LABEL_CLASS}>
-              Stop command
-              <input value={form.stopCmd} onChange={(event) => update("stopCmd", event.target.value)} className={INPUT_CLASS} />
+              Type
+              <select
+                value={form.integration}
+                onChange={(event) => chooseIntegration(event.target.value as IntegrationKind)}
+                className={INPUT_CLASS}
+              >
+                {INTEGRATION_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
-            <label className={LABEL_CLASS}>
-              Restart command
-              <input value={form.restartCmd} onChange={(event) => update("restartCmd", event.target.value)} className={INPUT_CLASS} />
-            </label>
-            <label className={LABEL_CLASS}>
-              Logs command
-              <input value={form.logsCmd} onChange={(event) => update("logsCmd", event.target.value)} className={INPUT_CLASS} />
-            </label>
-          </div>}
+
+            {form.integration !== "none" && (
+              <>
+                <label className={LABEL_CLASS}>
+                  Base URL
+                  <input
+                    type="url"
+                    value={form.integrationUrl}
+                    onChange={(event) => update("integrationUrl", event.target.value)}
+                    className={INPUT_CLASS}
+                    required
+                  />
+                  <span className="text-xs font-normal text-muted-foreground">
+                    localhost is switched to 127.0.0.1 automatically.
+                  </span>
+                </label>
+
+                {form.integration === "jenkins" && (
+                  <label className={LABEL_CLASS}>
+                    Username
+                    <input
+                      value={form.integrationUser}
+                      onChange={(event) => update("integrationUser", event.target.value)}
+                      autoComplete="off"
+                      className={INPUT_CLASS}
+                      required
+                    />
+                  </label>
+                )}
+
+                {form.integration === "generic_http" && (
+                  <label className={LABEL_CLASS}>
+                    Header name (optional)
+                    <input
+                      value={form.integrationHeader}
+                      onChange={(event) => update("integrationHeader", event.target.value)}
+                      placeholder="Authorization"
+                      autoComplete="off"
+                      className={INPUT_CLASS}
+                    />
+                  </label>
+                )}
+
+                {(form.integration === "jenkins" || form.integration === "sonarqube" || form.integration === "generic_http") && (
+                  <SecretField
+                    label={
+                      form.integration === "generic_http" ? "Header value (optional)" : "API token"
+                    }
+                    saved={Boolean(service?.credentialSaved)}
+                    removed={removeCredential}
+                    value={form.integrationSecret}
+                    onChange={(value) => update("integrationSecret", value)}
+                    onRemove={() => setRemoveCredential(true)}
+                    onUndoRemove={() => setRemoveCredential(false)}
+                  />
+                )}
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void handleTestConnection()}
+                    disabled={connTesting || !form.integrationUrl.trim()}
+                    className="h-10 rounded-[10px] border border-border2 px-4 text-[13px] font-semibold text-foreground disabled:opacity-60"
+                  >
+                    {connTesting ? "Testing…" : "Test connection"}
+                  </button>
+                  {connTest && (
+                    <span
+                      role="status"
+                      className={`text-[13px] font-semibold ${connTest.ok ? "text-ok" : "text-bad"}`}
+                    >
+                      {TEST_LABEL[connTest.result]}
+                      {connTest.ok ? "" : `: ${connTest.message}`}
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+          </fieldset>
 
           {error && <p className="m-0 text-[13px] text-bad">{error}</p>}
 

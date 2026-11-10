@@ -155,17 +155,20 @@ export interface JenkinsSummary {
   failedToday: number;
 }
 
-export async function fetchJenkinsBuilds(signal?: AbortSignal): Promise<JenkinsBuilds> {
+/** `?service=<id>` selects which service's integration the API should use. */
+const svc = (serviceId: string, sep: "?" | "&" = "?") => `${sep}service=${encodeURIComponent(serviceId)}`;
+
+export async function fetchJenkinsBuilds(serviceId: string, signal?: AbortSignal): Promise<JenkinsBuilds> {
   const body = await requestJSON<{ configured?: boolean; builds?: JenkinsBuild[] }>(
-    "/jenkins/builds",
+    `/jenkins/builds${svc(serviceId)}`,
     { signal },
   );
   return { configured: body.configured !== false, builds: body.builds ?? [] };
 }
 
-export async function fetchJenkinsSummary(signal?: AbortSignal): Promise<JenkinsSummary> {
+export async function fetchJenkinsSummary(serviceId: string, signal?: AbortSignal): Promise<JenkinsSummary> {
   const body = await requestJSON<Partial<JenkinsSummary> & { configured?: boolean }>(
-    "/jenkins/summary",
+    `/jenkins/summary${svc(serviceId)}`,
     { signal },
   );
   return {
@@ -177,18 +180,19 @@ export async function fetchJenkinsSummary(signal?: AbortSignal): Promise<Jenkins
   };
 }
 
-export async function triggerJenkinsBuild(job: string): Promise<void> {
-  await requestJSON(`/jenkins/jobs/${encodeURIComponent(job)}/build`, { method: "POST" });
+export async function triggerJenkinsBuild(serviceId: string, job: string): Promise<void> {
+  await requestJSON(`/jenkins/jobs/${encodeURIComponent(job)}/build${svc(serviceId)}`, { method: "POST" });
 }
 
 export async function fetchJenkinsConsole(
+  serviceId: string,
   job: string,
   num: number,
   tail = 200,
   signal?: AbortSignal,
 ): Promise<{ configured: boolean; lines: string[] }> {
   const body = await requestJSON<{ configured?: boolean; lines?: string[] }>(
-    `/jenkins/jobs/${encodeURIComponent(job)}/${num}/console?tail=${tail}`,
+    `/jenkins/jobs/${encodeURIComponent(job)}/${num}/console?tail=${tail}${svc(serviceId, "&")}`,
     { signal },
   );
   return { configured: body.configured !== false, lines: body.lines ?? [] };
@@ -244,20 +248,21 @@ const EMPTY_SONAR_MEASURES: SonarMeasures = {
   ncloc: null,
 };
 
-export async function fetchSonarProjects(signal?: AbortSignal): Promise<SonarProjects> {
+export async function fetchSonarProjects(serviceId: string, signal?: AbortSignal): Promise<SonarProjects> {
   const body = await requestJSON<{ configured?: boolean; projects?: SonarProject[] }>(
-    "/sonar/projects",
+    `/sonar/projects${svc(serviceId)}`,
     { signal },
   );
   return { configured: body.configured !== false, projects: body.projects ?? [] };
 }
 
 export async function fetchSonarProject(
+  serviceId: string,
   key: string,
   signal?: AbortSignal,
 ): Promise<SonarProjectDetail> {
   const body = await requestJSON<Partial<SonarProjectDetail> & { configured?: boolean }>(
-    `/sonar/projects/${encodeURIComponent(key)}`,
+    `/sonar/projects/${encodeURIComponent(key)}${svc(serviceId)}`,
     { signal },
   );
 
@@ -291,30 +296,32 @@ export interface OllamaModel {
 }
 
 export interface OllamaStatus {
+  configured: boolean;
   reachable: boolean;
+  error?: string;
   version: string | null;
 }
 
-export async function fetchOllamaStatus(signal?: AbortSignal): Promise<OllamaStatus> {
-  return requestJSON<OllamaStatus>("/ollama/status", { signal });
+export async function fetchOllamaStatus(serviceId: string, signal?: AbortSignal): Promise<OllamaStatus> {
+  return requestJSON<OllamaStatus>(`/ollama/status${svc(serviceId)}`, { signal });
 }
 
-export async function fetchOllamaModels(signal?: AbortSignal): Promise<OllamaModel[]> {
-  return requestJSON<OllamaModel[]>("/ollama/models", { signal });
+export async function fetchOllamaModels(serviceId: string, signal?: AbortSignal): Promise<OllamaModel[]> {
+  return requestJSON<OllamaModel[]>(`/ollama/models${svc(serviceId)}`, { signal });
 }
 
-export async function fetchOllamaRunning(signal?: AbortSignal): Promise<OllamaModel[]> {
-  return requestJSON<OllamaModel[]>("/ollama/running", { signal });
+export async function fetchOllamaRunning(serviceId: string, signal?: AbortSignal): Promise<OllamaModel[]> {
+  return requestJSON<OllamaModel[]>(`/ollama/running${svc(serviceId)}`, { signal });
 }
 
 // Load a model: POST /api/generate with empty prompt and keep_alive "30m"
-export async function ollamaLoadModel(name: string): Promise<void> {
-  await requestJSON("/ollama/models/" + encodeURIComponent(name) + "/load", { method: "POST" });
+export async function ollamaLoadModel(serviceId: string, name: string): Promise<void> {
+  await requestJSON("/ollama/models/" + encodeURIComponent(name) + "/load" + svc(serviceId), { method: "POST" });
 }
 
 // Unload a model: POST with keep_alive 0
-export async function ollamaUnloadModel(name: string): Promise<void> {
-  await requestJSON("/ollama/models/" + encodeURIComponent(name) + "/unload", { method: "POST" });
+export async function ollamaUnloadModel(serviceId: string, name: string): Promise<void> {
+  await requestJSON("/ollama/models/" + encodeURIComponent(name) + "/unload" + svc(serviceId), { method: "POST" });
 }
 
 // --- Activity & events ---
@@ -578,8 +585,17 @@ export interface RegistryService {
   stopCmd?: string;
   restartCmd?: string;
   logsCmd?: string;
+  runInShell: boolean;
+  integration: IntegrationKind;
+  integrationUrl?: string;
+  integrationUser?: string;
+  integrationHeader?: string;
+  /** A credential is stored. The credential itself is never sent to the browser. */
+  credentialSaved: boolean;
   sortOrder: number;
 }
+
+export type IntegrationKind = "none" | "jenkins" | "sonarqube" | "ollama" | "generic_http";
 
 export interface RegistryFolder {
   name: string;
@@ -604,6 +620,15 @@ export interface ServiceInput {
   stopCmd?: string;
   restartCmd?: string;
   logsCmd?: string;
+  runInShell?: boolean;
+  integration?: IntegrationKind;
+  integrationUrl?: string;
+  integrationUser?: string;
+  integrationHeader?: string;
+  /** Write-only: token or header value. Leave empty to keep the saved one. */
+  integrationSecret?: string;
+  /** Delete the saved credential on save. */
+  removeCredential?: boolean;
 }
 
 export async function fetchRegistryServices(
@@ -749,4 +774,50 @@ export async function fetchPrunePreview(signal?: AbortSignal): Promise<PrunePrev
 
 export async function runDockerPrune(): Promise<PruneResult> {
   return requestJSON<PruneResult>("/docker/prune", { method: "POST" });
+}
+
+// --- Command and integration tests ---
+
+export interface CommandTestResult {
+  ok: boolean;
+  mode: "exec" | "shell";
+  command: string;
+  output: string;
+  error?: string;
+}
+
+export async function testServiceCommand(input: {
+  id?: string;
+  folder: string;
+  command: string;
+  runInShell: boolean;
+}): Promise<CommandTestResult> {
+  return requestJSON("/registry/services/test-command", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export interface IntegrationTestResult {
+  ok: boolean;
+  result: "connected" | "wrong_token" | "unreachable" | "error";
+  message: string;
+}
+
+export async function testIntegrationConnection(input: {
+  serviceId?: string;
+  integration: Exclude<IntegrationKind, "none">;
+  integrationUrl: string;
+  integrationUser?: string;
+  integrationHeader?: string;
+  integrationSecret?: string;
+}): Promise<IntegrationTestResult> {
+  return requestJSON("/registry/integrations/test", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function removeServiceCredential(id: string): Promise<void> {
+  await requestJSON(`/registry/services/${encodeURIComponent(id)}/credential`, { method: "DELETE" });
 }

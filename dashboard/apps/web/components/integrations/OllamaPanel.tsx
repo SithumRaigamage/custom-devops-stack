@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { PageHeader } from "@/components/PageHeader";
 import { useOllamaStatus, useOllamaModels, useOllamaRunning } from "@/lib/use-ollama";
 import { ollamaLoadModel, ollamaUnloadModel } from "@/lib/api";
 
@@ -24,13 +23,13 @@ function formatSize(size: number | string): string {
   return `${value >= 100 ? Math.round(value) : Math.round(value * 10) / 10} ${units[unit]}`;
 }
 
-export default function OllamaPage() {
+export function OllamaPanel({ serviceId }: { serviceId: string }) {
   const [pending, setPending] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const statusQuery = useOllamaStatus();
-  const modelsQuery = useOllamaModels();
-  const runningQuery = useOllamaRunning();
+  const statusQuery = useOllamaStatus(serviceId);
+  const modelsQuery = useOllamaModels(serviceId);
+  const runningQuery = useOllamaRunning(serviceId);
 
   const models = modelsQuery.data ?? [];
   const runningModels = runningQuery.data ?? [];
@@ -48,7 +47,7 @@ export default function OllamaPage() {
     setPending(name);
     setActionError(null);
     try {
-      await ollamaLoadModel(name);
+      await ollamaLoadModel(serviceId, name);
       await refresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Could not load the model");
@@ -61,7 +60,7 @@ export default function OllamaPage() {
     setPending(name);
     setActionError(null);
     try {
-      await ollamaUnloadModel(name);
+      await ollamaUnloadModel(serviceId, name);
       await refresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Could not unload the model");
@@ -72,7 +71,6 @@ export default function OllamaPage() {
 
   return (
     <>
-      <PageHeader title="Ollama" sub="Local models that power the assistant and Open WebUI." />
 
       <div className="flex flex-col gap-4">
         <section
@@ -81,12 +79,12 @@ export default function OllamaPage() {
         >
           <div className="flex flex-[1_1_260px] flex-col gap-1">
             <span className="text-[13px] text-muted-foreground">Endpoint</span>
-            <code className="text-[15px] text-foreground">/api/ollama/status</code>
+            <code className="text-[15px] text-foreground">/api/version</code>
           </div>
 
           <span className="inline-flex items-center gap-1.5 rounded-full bg-ok-bg px-2.5 py-1 text-xs font-semibold text-ok">
             <span className={statusQuery.data?.reachable ? "size-1.5 rounded-full bg-ok" : "size-1.5 rounded-full bg-muted"} />
-            {statusQuery.data?.reachable ? "Reachable" : "Not reachable"}
+            {statusQuery.data?.reachable ? "Reachable" : statusQuery.data?.error ?? "Not reachable"}
           </span>
 
           <div className="flex flex-col gap-1">
@@ -111,7 +109,7 @@ export default function OllamaPage() {
 
           {modelsQuery.error ? (
             <p className="m-0 text-sm text-bad">
-              Could not read Ollama models: {modelsQuery.error.message}
+              {modelsQuery.error.message}
             </p>
           ) : modelsQuery.isPending ? (
             <p className="m-0 text-muted-foreground">Loading models…</p>
@@ -155,7 +153,7 @@ export default function OllamaPage() {
 
           {runningQuery.error ? (
             <p className="m-0 text-sm text-bad">
-              Could not read running models: {runningQuery.error.message}
+              {runningQuery.error.message}
             </p>
           ) : runningQuery.isPending ? (
             <p className="m-0 text-muted-foreground">Loading running models…</p>

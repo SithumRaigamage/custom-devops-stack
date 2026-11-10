@@ -5,6 +5,12 @@ import type { ServiceDetail, Status } from "./status.js";
 import { isJenkinsConfigured, listJenkinsBuilds, type JenkinsBuild } from "./jenkins.js";
 import { isSonarConfigured, listSonarProjects, sonarProject } from "./sonar.js";
 import { ollamaStatus } from "./ollama.js";
+import { getIntegrationConfig } from "./integrations.js";
+
+async function integrationLink(kind: "jenkins" | "sonarqube" | "ollama"): Promise<string> {
+  const config = await getIntegrationConfig(kind);
+  return config ? `/services/${config.serviceId}` : "/services";
+}
 
 const UNHEALTHY_AFTER_MS = 60_000;
 const EXTERNAL_INTERVAL_MS = 20_000;
@@ -340,7 +346,7 @@ async function evaluateServices(
 }
 
 async function evaluateJenkins(rules: AppSettings["notifications"]["rules"]): Promise<void> {
-  if (!rules.jenkinsFailed || !isJenkinsConfigured()) {
+  if (!rules.jenkinsFailed || !(await isJenkinsConfigured())) {
     await resolveRule("jenkins_failed");
     return;
   }
@@ -372,7 +378,7 @@ async function evaluateJenkins(rules: AppSettings["notifications"]["rules"]): Pr
         severity: "warn",
         message: `Jenkins build failed: ${job} #${build.num}`,
         serviceKey: job,
-        link: "/jenkins",
+        link: await integrationLink("jenkins"),
       });
     }
 
@@ -392,7 +398,7 @@ async function evaluateJenkins(rules: AppSettings["notifications"]["rules"]): Pr
 }
 
 async function evaluateSonar(rules: AppSettings["notifications"]["rules"]): Promise<void> {
-  if (!rules.sonarGateFailed || !isSonarConfigured()) {
+  if (!rules.sonarGateFailed || !(await isSonarConfigured())) {
     await resolveRule("sonar_gate_failed");
     return;
   }
@@ -424,7 +430,7 @@ async function evaluateSonar(rules: AppSettings["notifications"]["rules"]): Prom
         severity: "warn",
         message: `Quality gate failed for ${detail.name}`,
         serviceKey: project.key,
-        link: "/sonarqube",
+        link: await integrationLink("sonarqube"),
       });
     } else {
       await resolveAlert(key);
@@ -443,6 +449,10 @@ async function evaluateOllama(rules: AppSettings["notifications"]["rules"]): Pro
   }
 
   const status = await ollamaStatus();
+  if (!status.configured) {
+    await resolveAlert("ollama");
+    return;
+  }
   if (status.reachable) {
     await resolveAlert("ollama");
   } else {
@@ -452,7 +462,7 @@ async function evaluateOllama(rules: AppSettings["notifications"]["rules"]): Pro
       severity: "bad",
       message: "Ollama is unreachable",
       serviceKey: "ollama",
-      link: "/ollama",
+      link: await integrationLink("ollama"),
     });
   }
 }

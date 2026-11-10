@@ -10,6 +10,7 @@ import {
   saveSettings,
   updateRegistryService,
   reorderRegistryServices,
+  type IntegrationKind,
   type ServiceInput,
   type SettingsPatch,
 } from "./api";
@@ -94,4 +95,10 @@ export function useReorderRegistryServices() {
     mutationFn: (ids: string[]) => reorderRegistryServices(ids),
     onSuccess: invalidate,
   });
+}
+
+/** The first service (by sort order) that uses the given integration, or undefined. */
+export function useIntegrationServiceId(kind: IntegrationKind): string | undefined {
+  const { data } = useRegistryServices();
+  return data?.find((service) => service.integration === kind)?.id;
 }

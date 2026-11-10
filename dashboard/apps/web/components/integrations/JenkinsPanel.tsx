@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { LogsDrawer } from "@/components/LogsDrawer";
-import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { relativeTime } from "@/lib/activity";
 import type { JenkinsBuild } from "@/lib/api";
@@ -40,17 +39,10 @@ function ConnectJenkins({ onRetry, retrying }: { onRetry: () => void; retrying: 
           <strong>API Token</strong> → <strong>Add new token</strong>, then copy it.
         </li>
         <li>
-          Add these to <code className="font-mono text-xs">apps/api/.env</code>:
-          <pre className="mt-2 overflow-x-auto rounded-[10px] border border-border2 bg-card2 p-3 font-mono text-xs text-fg2">
-{`JENKINS_URL=http://localhost:8080
-JENKINS_USER=your-jenkins-user
-JENKINS_API_TOKEN=your-api-token`}
-          </pre>
-        </li>
-        <li>
-          Restart the API (<code className="font-mono text-xs">pnpm --filter api dev</code>) and
-          retry.
-        </li>
+            Open <strong>Settings</strong>, edit this service, choose the Jenkins integration and
+            enter the base URL, user and token. The token is stored encrypted and never shown again.
+          </li>
+          <li>Use <strong>Test connection</strong>, save, then retry here.</li>
       </ol>
 
       <div>
@@ -72,10 +64,10 @@ JENKINS_API_TOKEN=your-api-token`}
   );
 }
 
-export default function JenkinsPage() {
-  const buildsQuery = useJenkinsBuilds();
-  const summaryQuery = useJenkinsSummary();
-  const rebuild = useRebuildJob();
+export function JenkinsPanel({ serviceId }: { serviceId: string }) {
+  const buildsQuery = useJenkinsBuilds(serviceId);
+  const summaryQuery = useJenkinsSummary(serviceId);
+  const rebuild = useRebuildJob(serviceId);
   const [consoleBuild, setConsoleBuild] = useState<JenkinsBuild | null>(null);
 
   const result = buildsQuery.data;
@@ -103,13 +95,12 @@ export default function JenkinsPage() {
 
   return (
     <>
-      <PageHeader title="Jenkins" sub="Recent pipeline runs from your Jenkins server." />
 
       {buildsQuery.isPending ? (
         <p className="text-sm text-muted-foreground">Loading builds…</p>
       ) : buildsQuery.error ? (
         <div className="rounded-[12px] border border-bad-bg bg-bad-bg px-4 py-3 text-sm text-bad">
-          Can’t reach Jenkins: {buildsQuery.error.message}
+          {buildsQuery.error.message}
         </div>
       ) : !configured ? (
         <ConnectJenkins onRetry={retry} retrying={buildsQuery.isFetching} />
@@ -253,6 +244,7 @@ export default function JenkinsPage() {
       {consoleBuild && (
         <LogsDrawer
           console={{
+            serviceId,
             job: consoleBuild.job,
             num: consoleBuild.num,
             status: consoleBuild.status,

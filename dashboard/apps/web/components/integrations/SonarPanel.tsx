@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
 import { relativeTime } from "@/lib/activity";
 import {
   latestSonarProject,
@@ -62,16 +61,10 @@ function EmptyState({
             <strong>Security</strong> → <strong>Generate Tokens</strong> and copy the token.
           </li>
           <li>
-            Add these to <code className="font-mono text-xs">apps/api/.env</code>:
-            <pre className="mt-2 overflow-x-auto rounded-[10px] border border-border2 bg-card2 p-3 font-mono text-xs text-fg2">
-{`SONAR_URL=http://localhost:9000
-SONAR_TOKEN=your-sonar-token`}
-            </pre>
+            Open <strong>Settings</strong>, edit this service, choose the SonarQube integration and
+            enter the base URL and token. The token is stored encrypted and never shown again.
           </li>
-          <li>
-            Restart the API (<code className="font-mono text-xs">pnpm --filter api dev</code>) and
-            retry.
-          </li>
+          <li>Use <strong>Test connection</strong>, save, then retry here.</li>
         </ol>
       ) : (
         <pre className="m-0 overflow-x-auto rounded-[10px] border border-border2 bg-card2 p-3 font-mono text-xs text-fg2">
@@ -100,8 +93,8 @@ SONAR_TOKEN=your-sonar-token`}
   );
 }
 
-export default function SonarQubePage() {
-  const projectsQuery = useSonarProjects();
+export function SonarPanel({ serviceId }: { serviceId: string }) {
+  const projectsQuery = useSonarProjects(serviceId);
   const projects = projectsQuery.data?.projects ?? [];
   const configured = projectsQuery.data?.configured ?? true;
 
@@ -119,7 +112,7 @@ export default function SonarQubePage() {
     );
   }, [projects]);
 
-  const detailQuery = useSonarProject(activeKey);
+  const detailQuery = useSonarProject(serviceId, activeKey);
   const detail = detailQuery.data;
   const project = projects.find((entry) => entry.key === activeKey) ?? null;
 
@@ -179,13 +172,12 @@ export default function SonarQubePage() {
 
   return (
     <>
-      <PageHeader title="SonarQube" sub="Code quality and quality gates for your projects." />
 
       {projectsQuery.isPending ? (
         <p className="text-sm text-muted-foreground">Loading projects…</p>
       ) : projectsQuery.error ? (
         <div className="rounded-[12px] border border-bad-bg bg-bad-bg px-4 py-3 text-sm text-bad">
-          Can’t reach SonarQube: {projectsQuery.error.message}
+          {projectsQuery.error.message}
         </div>
       ) : !configured || projects.length === 0 ? (
         <EmptyState
@@ -219,7 +211,7 @@ export default function SonarQubePage() {
 
           {detailQuery.error ? (
             <div className="rounded-[12px] border border-bad-bg bg-bad-bg px-4 py-3 text-sm text-bad">
-              Can’t load this project: {detailQuery.error.message}
+              {detailQuery.error.message}
             </div>
           ) : detailQuery.isPending || !detail ? (
             <p className="text-sm text-muted-foreground">Loading project…</p>

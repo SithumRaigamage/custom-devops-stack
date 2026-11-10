@@ -5,29 +5,31 @@ import { fetchOllamaStatus, fetchOllamaModels, fetchOllamaRunning } from "./api"
 
 export const OLLAMA_QUERY_KEY = ["ollama"] as const;
 
-export function useOllamaStatus(signal?: AbortSignal) {
+export function useOllamaStatus(serviceId: string) {
   return useQuery({
-    queryKey: [...OLLAMA_QUERY_KEY, "status"],
-    queryFn: () => fetchOllamaStatus(signal),
+    queryKey: [...OLLAMA_QUERY_KEY, serviceId, "status"],
+    queryFn: ({ signal }) => fetchOllamaStatus(serviceId, signal),
     staleTime: 2000,
     refetchInterval: false,
   });
 }
 
-export function useOllamaModels(signal?: AbortSignal) {
+export function useOllamaModels(serviceId: string) {
   return useQuery({
-    queryKey: [...OLLAMA_QUERY_KEY, "models"],
-    queryFn: () => fetchOllamaModels(signal),
+    queryKey: [...OLLAMA_QUERY_KEY, serviceId, "models"],
+    queryFn: ({ signal }) => fetchOllamaModels(serviceId, signal),
     staleTime: 2000,
     refetchInterval: false,
+    retry: false,
   });
 }
 
-export function useOllamaRunning(signal?: AbortSignal) {
+export function useOllamaRunning(serviceId: string) {
   return useQuery({
-    queryKey: [...OLLAMA_QUERY_KEY, "running"],
-    queryFn: () => fetchOllamaRunning(signal),
+    queryKey: [...OLLAMA_QUERY_KEY, serviceId, "running"],
+    queryFn: ({ signal }) => fetchOllamaRunning(serviceId, signal),
     staleTime: 2000,
     refetchInterval: false,
+    retry: false,
   });
 }

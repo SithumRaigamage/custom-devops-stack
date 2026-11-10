@@ -1,41 +1,18 @@
 "use client";
 
 import {
-  Box,
-  Database,
   ExternalLink,
-  GitBranch,
-  Globe,
-  MessageSquare,
   Play,
   RefreshCw,
-  Server,
-  ShieldCheck,
   Square,
   Terminal,
-  type LucideIcon,
 } from "lucide-react";
+import { resolveServiceIcon } from "@/lib/service-icons";
 import type { Service, ServiceAction } from "@/lib/api";
 import { useServiceAction } from "@/lib/use-services";
 import { useUptime } from "@/lib/use-uptime";
 import { cn } from "@/lib/utils";
 import { StatusBadge, type UiStatus } from "./StatusBadge";
-
-const ICONS: Record<string, LucideIcon> = {
-  jenkins: GitBranch,
-  sonarqube: ShieldCheck,
-  "open-webui": MessageSquare,
-};
-
-const ICON_BY_NAME: Record<string, LucideIcon> = {
-  "git-branch": GitBranch,
-  "shield-check": ShieldCheck,
-  "message-square": MessageSquare,
-  database: Database,
-  globe: Globe,
-  box: Box,
-  server: Server,
-};
 
 const PENDING_STATUS: Record<ServiceAction, UiStatus> = {
   start: "starting",
@@ -109,9 +86,11 @@ function Meter({
 export function ServiceCard({
   service,
   onViewLogs,
+  hideLogsButton = false,
 }: {
   service: Service;
-  onViewLogs: (service: Service) => void;
+  onViewLogs?: (service: Service) => void;
+  hideLogsButton?: boolean;
 }) {
   const mutation = useServiceAction(service.id);
   const { data: uptimeData } = useUptime();
@@ -129,8 +108,7 @@ export function ServiceCard({
   const startDisabled = busy || running;
   const stopDisabled = busy || service.status === "stopped";
 
-  const Icon =
-    (service.icon ? ICON_BY_NAME[service.icon] : undefined) ?? ICONS[service.id] ?? Server;
+  const Icon = resolveServiceIcon(service.icon, service.id);
   const note = status === "unhealthy" ? service.healthNote : "";
 
   return (
@@ -238,10 +216,12 @@ export function ServiceCard({
           <ExternalLink className="size-[13px]" strokeWidth={2} aria-hidden="true" />
           Open
         </a>
-        <button type="button" onClick={() => onViewLogs(service)} className={TEXT_BUTTON}>
-          <Terminal className="size-[14px]" strokeWidth={2} aria-hidden="true" />
-          View Logs
-        </button>
+        {!hideLogsButton && onViewLogs && (
+          <button type="button" onClick={() => onViewLogs(service)} className={TEXT_BUTTON}>
+            <Terminal className="size-[14px]" strokeWidth={2} aria-hidden="true" />
+            View Logs
+          </button>
+        )}
       </div>
 
       {mutation.isError && (

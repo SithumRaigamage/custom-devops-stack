@@ -3,7 +3,7 @@ import Fastify, { type FastifyReply } from "fastify";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import { z } from "zod";
-import { runCompose, runCustomCommand, serviceCwd } from "./compose.js";
+import { COMMAND_TIMEOUT_MS, describeInvocation, runCompose, runCustomCommand, serviceCwd } from "./compose.js";
 import { loadServices } from "./services.js";
 import { getServiceDetails } from "./status.js";
 import { isDockerAvailable, listContainersByProject, projectNameForFolder } from "./docker.js";
@@ -56,6 +56,12 @@ import {
   updateService,
   testService,
   reorderServices,
+  ServiceInputSchema,
+  CommandTestBody,
+  IntegrationTestBody,
+  testCommand,
+  testIntegration,
+  removeServiceCredential,
 } from "./registry.js";
 import {
   createImageBackup,
@@ -367,18 +373,20 @@ app.post(
     try {
       const outputs: string[] = [];
       let executedCommand = "";
-      if (service.type === "compose") {
+      const customCommand = action === "start"
+        ? service.startCommand
+        : action === "stop"
+          ? service.stopCommand
+          : service.restartCommand;
+      // Custom services always use their commands; compose services use them only in shell mode.
+      if (service.type === "compose" && !(service.runInShell && customCommand)) {
         const composeAction = action === "start" ? "up" : action === "stop" ? "down" : "restart";
         executedCommand = `docker compose -f ${service.composeFile} ${composeAction}`;
         const args = composeAction === "up" ? ["up", "-d"] : [composeAction];
         const result = await runCompose(service, args, ACTION_TIMEOUT_MS);
         outputs.push(result.stdout, result.stderr);
       } else {
-        const command = action === "start"
-          ? service.startCommand
-          : action === "stop"
-            ? service.stopCommand
-            : service.restartCommand;
+        const command = customCommand;
         if (!command) {
           return reply.code(500).send({
             id: service.id,
@@ -387,8 +395,12 @@ app.post(
             error: `No ${action} command configured for ${service.name}`,
           });
         }
-        executedCommand = command;
-        const result = await runCustomCommand(service, command, ACTION_TIMEOUT_MS);
+        executedCommand = describeInvocation(command, service.runInShell);
+        const result = await runCustomCommand(
+          service,
+          command,
+          service.runInShell ? COMMAND_TIMEOUT_MS : ACTION_TIMEOUT_MS,
+        );
         outputs.push(result.stdout, result.stderr);
       }
       await recordServiceRun(service.id, action, executedCommand, true, outputs.join(""));
@@ -409,9 +421,12 @@ app.post(
       await recordServiceRun(
         service.id,
         action,
-        service.type === "compose"
+        service.type === "compose" && !service.runInShell
           ? `docker compose -f ${service.composeFile} ${action}`
-          : service[`${action}Command` as "startCommand" | "stopCommand" | "restartCommand"] ?? "",
+          : describeInvocation(
+              service[`${action}Command` as "startCommand" | "stopCommand" | "restartCommand"] ?? "",
+              service.runInShell,
+            ),
         false,
         (detail.stderr || detail.message).trim(),
       ).catch(() => undefined);
@@ -551,19 +566,23 @@ app.get(
   },
 );
 
+/** Optional `?service=<id>` selects which service's integration to use (default: the first of that kind). */
+const ServiceQuery = z.object({ service: z.string().optional() }).strict();
+const sid = (req: unknown): string | undefined => (requestQuery(req as never) as { service?: string }).service;
+
 // ---- Jenkins --------------------------------------------------------------
 
 app.get(
   "/api/jenkins/builds",
   {
     schema: {
-      querystring: z.object({}).strict(),
+      querystring: ServiceQuery,
     },
   },
   async (req, reply) => {
-    if (!isJenkinsConfigured()) return { configured: false, builds: [] };
+    if (!(await isJenkinsConfigured(sid(req)))) return { configured: false, builds: [] };
     try {
-      return { configured: true, builds: await listJenkinsBuilds() };
+      return { configured: true, builds: await listJenkinsBuilds(sid(req)) };
     } catch (err) {
       req.log.error(err);
       return reply.code(502).send({
@@ -577,11 +596,11 @@ app.get(
   "/api/jenkins/summary",
   {
     schema: {
-      querystring: z.object({}).strict(),
+      querystring: ServiceQuery,
     },
   },
   async (req, reply) => {
-    if (!isJenkinsConfigured()) {
+    if (!(await isJenkinsConfigured(sid(req)))) {
       return {
         configured: false,
         successRate: 0,
@@ -591,7 +610,7 @@ app.get(
       };
     }
     try {
-      return { configured: true, ...(await jenkinsSummary()) };
+      return { configured: true, ...(await jenkinsSummary(sid(req))) };
     } catch (err) {
       req.log.error(err);
       return reply.code(502).send({
@@ -606,17 +625,18 @@ app.post(
   {
     schema: {
       params: z.object({ job: z.string() }),
+      querystring: ServiceQuery,
       body: z.object({}).strict().nullish(),
     },
   },
   async (req, reply) => {
-    if (!isJenkinsConfigured()) {
+    if (!(await isJenkinsConfigured(sid(req)))) {
       return reply.code(400).send({ error: "Jenkins is not configured" });
     }
     if (!requestParams(req).job) return reply.code(400).send({ error: "Job is required" });
 
     try {
-      await triggerJenkinsBuild(requestParams(req).job);
+      await triggerJenkinsBuild(requestParams(req).job, sid(req));
       return { ok: true };
     } catch (err) {
       req.log.error(err);
@@ -632,11 +652,11 @@ app.get(
   {
     schema: {
       params: z.object({ job: z.string(), num: z.string() }),
-      querystring: z.object({ tail: z.string().optional() }).strict(),
+      querystring: z.object({ tail: z.string().optional(), service: z.string().optional() }).strict(),
     },
   },
   async (req, reply) => {
-    if (!isJenkinsConfigured()) return { configured: false, lines: [] };
+    if (!(await isJenkinsConfigured(sid(req)))) return { configured: false, lines: [] };
 
     const num = Number(requestParams(req).num);
     if (!Number.isInteger(num) || num < 1) {
@@ -648,7 +668,7 @@ app.get(
     }
 
     try {
-      return { configured: true, lines: await jenkinsConsole(requestParams(req).job, num, tail) };
+      return { configured: true, lines: await jenkinsConsole(requestParams(req).job, num, tail, sid(req)) };
     } catch (err) {
       req.log.error(err);
       return reply.code(502).send({
@@ -664,13 +684,13 @@ app.get(
   "/api/sonar/projects",
   {
     schema: {
-      querystring: z.object({}).strict(),
+      querystring: ServiceQuery,
     },
   },
   async (req, reply) => {
-    if (!isSonarConfigured()) return { configured: false, projects: [] };
+    if (!(await isSonarConfigured(sid(req)))) return { configured: false, projects: [] };
     try {
-      return { configured: true, projects: await listSonarProjects() };
+      return { configured: true, projects: await listSonarProjects(sid(req)) };
     } catch (err) {
       req.log.error(err);
       return reply.code(502).send({
@@ -685,12 +705,13 @@ app.get(
   {
     schema: {
       params: z.object({ key: z.string() }),
+      querystring: ServiceQuery,
     },
   },
   async (req, reply) => {
-    if (!isSonarConfigured()) return { configured: false, key: requestParams(req).key };
+    if (!(await isSonarConfigured(sid(req)))) return { configured: false, key: requestParams(req).key };
     try {
-      return { configured: true, ...(await sonarProject(requestParams(req).key)) };
+      return { configured: true, ...(await sonarProject(requestParams(req).key, sid(req))) };
     } catch (err) {
       req.log.error(err);
       return reply.code(502).send({
@@ -706,30 +727,48 @@ app.get(
   "/api/ollama/status",
   {
     schema: {
-      querystring: z.object({}).strict(),
+      querystring: ServiceQuery,
     },
   },
-  async () => ollamaStatus(),
+  async (req) => ollamaStatus(sid(req)),
 );
 
 app.get(
   "/api/ollama/models",
   {
     schema: {
-      querystring: z.object({}).strict(),
+      querystring: ServiceQuery,
     },
   },
-  async () => ollamaModels(),
+  async (req, reply) => {
+    try {
+      return await ollamaModels(sid(req));
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "Could not reach Ollama",
+      });
+    }
+  },
 );
 
 app.get(
   "/api/ollama/running",
   {
     schema: {
-      querystring: z.object({}).strict(),
+      querystring: ServiceQuery,
     },
   },
-  async () => ollamaRunning(),
+  async (req, reply) => {
+    try {
+      return await ollamaRunning(sid(req));
+    } catch (err) {
+      req.log.error(err);
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "Could not reach Ollama",
+      });
+    }
+  },
 );
 
 app.post(
@@ -737,12 +776,13 @@ app.post(
   {
     schema: {
       params: z.object({ name: z.string() }),
+      querystring: ServiceQuery,
       body: z.object({}).strict().nullish(),
     },
   },
   async (req, reply) => {
     try {
-      await ollamaLoadModel(requestParams(req).name);
+      await ollamaLoadModel(requestParams(req).name, sid(req));
       return { ok: true };
     } catch (err) {
       req.log.error(err);
@@ -758,12 +798,13 @@ app.post(
   {
     schema: {
       params: z.object({ name: z.string() }),
+      querystring: ServiceQuery,
       body: z.object({}).strict().nullish(),
     },
   },
   async (req, reply) => {
     try {
-      await ollamaUnloadModel(requestParams(req).name);
+      await ollamaUnloadModel(requestParams(req).name, sid(req));
       return { ok: true };
     } catch (err) {
       req.log.error(err);
@@ -1017,24 +1058,7 @@ app.post(
   "/api/registry/services",
   {
     schema: {
-      body: z.object({
-        id: z.string().optional(),
-        name: z.string().min(1),
-        desc: z.string().optional(),
-        description: z.string().optional(),
-        folder: z.string().min(1),
-        type: z.enum(["compose", "custom"]).optional(),
-        composeFile: z.string().optional(),
-        port: z.number().int().min(1).max(65535),
-        url: z.string().url(),
-        healthUrl: z.string().url().optional(),
-        healthPath: z.string().trim().regex(/^\//).max(512).optional(),
-        icon: z.string().optional(),
-        startCmd: z.string().optional(),
-        stopCmd: z.string().optional(),
-        restartCmd: z.string().optional(),
-        logsCmd: z.string().optional(),
-      }).strict(),
+      body: ServiceInputSchema,
     },
     config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
   },
@@ -1062,24 +1086,7 @@ app.put("/api/registry/services/reorder", {
 app.put("/api/registry/services/:id", {
   schema: {
     params: z.object({ id: z.string() }),
-    body: z.object({
-      id: z.string().optional(),
-      name: z.string().min(1),
-      desc: z.string().optional(),
-      description: z.string().optional(),
-      folder: z.string().min(1),
-      type: z.enum(["compose", "custom"]).optional(),
-      composeFile: z.string().optional(),
-      port: z.number().int().min(1).max(65535),
-      url: z.string().url(),
-      healthUrl: z.string().url().optional(),
-      healthPath: z.string().trim().regex(/^\//).max(512).optional(),
-      icon: z.string().optional(),
-      startCmd: z.string().optional(),
-      stopCmd: z.string().optional(),
-      restartCmd: z.string().optional(),
-      logsCmd: z.string().optional(),
-    }).strict(),
+    body: ServiceInputSchema,
   },
   config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
 }, async (req, reply) => {
@@ -1094,21 +1101,7 @@ app.post(
   "/api/registry/services/test",
   {
     schema: {
-      body: z.object({
-        name: z.string().min(1),
-        folder: z.string().min(1),
-        type: z.enum(["compose", "custom"]).optional(),
-        composeFile: z.string().optional(),
-        port: z.number().int().min(1).max(65535),
-        url: z.string().url(),
-        healthUrl: z.string().url().optional(),
-        healthPath: z.string().regex(/^\//).optional(),
-        icon: z.string().optional(),
-        startCmd: z.string().optional(),
-        stopCmd: z.string().optional(),
-        restartCmd: z.string().optional(),
-        logsCmd: z.string().optional(),
-      }).strict(),
+      body: ServiceInputSchema,
     },
   },
   async (req, reply) => {
@@ -1119,6 +1112,47 @@ app.post(
     }
   },
 );
+
+app.post(
+  "/api/registry/services/test-command",
+  {
+    schema: { body: CommandTestBody },
+    config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+  },
+  async (req, reply) => {
+    try {
+      return await testCommand(requestBody(req));
+    } catch (err) {
+      return sendRegistryError(reply, err);
+    }
+  },
+);
+
+app.post(
+  "/api/registry/integrations/test",
+  {
+    schema: { body: IntegrationTestBody },
+    config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+  },
+  async (req, reply) => {
+    try {
+      return await testIntegration(requestBody(req));
+    } catch (err) {
+      return sendRegistryError(reply, err);
+    }
+  },
+);
+
+app.delete("/api/registry/services/:id/credential", {
+  schema: { params: z.object({ id: z.string() }) },
+}, async (req, reply) => {
+  try {
+    await removeServiceCredential(requestParams(req).id);
+    return { ok: true };
+  } catch (err) {
+    return sendRegistryError(reply, err);
+  }
+});
 
 app.delete("/api/registry/services/:id", {
   schema: {

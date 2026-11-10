@@ -1,5 +1,6 @@
+import { getIntegrationConfig, integrationFetch, type IntegrationConfig } from "./integrations.js";
+
 const CACHE_TTL_MS = 10_000;
-const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_BUILDS = 20;
 
 export type JenkinsBuildStatus =
@@ -42,8 +43,11 @@ interface JenkinsBuildRaw {
 interface JenkinsJobRaw {
   _class?: string;
   name?: string;
+  fullName?: string;
   url?: string;
   builds?: JenkinsBuildRaw[];
+  /** Folders and multibranch projects nest their jobs here. */
+  jobs?: JenkinsJobRaw[];
 }
 
 interface JenkinsJobsResponse {
@@ -70,20 +74,13 @@ export class JenkinsHttpError extends Error {
   }
 }
 
-function jenkinsConfig(): { url: string; auth: string } | null {
-  const url = process.env.JENKINS_URL?.trim().replace(/\/+$/, "");
-  const user = process.env.JENKINS_USER?.trim();
-  const token = process.env.JENKINS_API_TOKEN?.trim();
-  if (!url || !user || !token) return null;
-
-  return {
-    url,
-    auth: `Basic ${Buffer.from(`${user}:${token}`).toString("base64")}`,
-  };
+async function jenkinsConfig(serviceId?: string): Promise<IntegrationConfig | null> {
+  const config = await getIntegrationConfig("jenkins", serviceId);
+  return config?.username && config.secret ? config : null;
 }
 
-export function isJenkinsConfigured(): boolean {
-  return jenkinsConfig() !== null;
+export async function isJenkinsConfigured(serviceId?: string): Promise<boolean> {
+  return (await jenkinsConfig(serviceId)) !== null;
 }
 
 const cache = new Map<string, { at: number; value: unknown }>();
@@ -105,51 +102,20 @@ function jobPath(job: string): string {
     .join("/job/");
 }
 
-function requestHeaders(auth: string, extra: Record<string, string> = {}): HeadersInit {
-  return {
-    Authorization: auth,
-    Accept: "application/json",
-    ...extra,
-  };
-}
-
-async function jenkinsFetch(path: string): Promise<Response> {
-  const config = jenkinsConfig();
+async function jenkinsFetch(path: string, serviceId?: string): Promise<Response> {
+  const config = await jenkinsConfig(serviceId);
   if (!config) throw new JenkinsNotConfiguredError();
-
-  let res: Response;
-  try {
-    res = await fetch(`${config.url}${path}`, {
-      headers: requestHeaders(config.auth),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new JenkinsHttpError(502, `Cannot reach Jenkins: ${message}`);
-  }
-
-  if (!res.ok) {
-    throw new JenkinsHttpError(res.status, `Jenkins responded ${res.status}`);
-  }
-  return res;
+  return integrationFetch(config, path);
 }
 
-async function jenkinsJson<T>(path: string): Promise<T> {
-  const res = await jenkinsFetch(path);
+async function jenkinsJson<T>(path: string, serviceId?: string): Promise<T> {
+  const res = await jenkinsFetch(path, serviceId);
   return (await res.json()) as T;
 }
 
-async function crumbHeaders(): Promise<Record<string, string>> {
-  const config = jenkinsConfig();
-  if (!config) throw new JenkinsNotConfiguredError();
-
+async function crumbHeaders(config: IntegrationConfig): Promise<Record<string, string>> {
   try {
-    const res = await fetch(`${config.url}/crumbIssuer/api/json`, {
-      headers: requestHeaders(config.auth),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (!res.ok) return {};
-
+    const res = await integrationFetch(config, "/crumbIssuer/api/json");
     const crumb = (await res.json()) as JenkinsCrumb;
     if (!crumb.crumb || !crumb.crumbRequestField) return {};
     return { [crumb.crumbRequestField]: crumb.crumb };
@@ -177,7 +143,7 @@ function statusOf(build: JenkinsBuildRaw): JenkinsBuildStatus {
 
 const BRANCH_PARAMS = ["BRANCH_NAME", "GIT_BRANCH", "CHANGE_BRANCH", "BRANCH", "branch"];
 
-function branchOf(job: JenkinsJobRaw, build: JenkinsBuildRaw): string {
+function branchOf(job: JenkinsJobRaw, build: JenkinsBuildRaw, parent?: JenkinsJobRaw): string {
   for (const action of build.actions ?? []) {
     for (const parameter of action.parameters ?? []) {
       if (!parameter.name || !BRANCH_PARAMS.includes(parameter.name)) continue;
@@ -188,39 +154,47 @@ function branchOf(job: JenkinsJobRaw, build: JenkinsBuildRaw): string {
     }
   }
 
-  if (/multibranch|WorkflowMultiBranchProject/i.test(job._class ?? "")) {
+  // A job inside a multibranch project is one branch of that project.
+  if (/multibranch|WorkflowMultiBranchProject/i.test(parent?._class ?? job._class ?? "")) {
     return decodeURIComponent(job.name ?? "");
   }
 
   return "—";
 }
 
-function toBuild(job: JenkinsJobRaw, build: JenkinsBuildRaw): JenkinsBuild {
+/** Folders and multibranch projects contain jobs; the builds are on the leaves. */
+function toBuild(job: JenkinsJobRaw, build: JenkinsBuildRaw, parent?: JenkinsJobRaw): JenkinsBuild {
+  const isBranch = /multibranch|WorkflowMultiBranchProject/i.test(parent?._class ?? "");
+  const display = isBranch ? parent?.fullName ?? parent?.name : job.fullName ?? job.name;
   return {
     num: build.number ?? 0,
-    job: job.name ?? "unknown",
-    branch: branchOf(job, build),
+    job: display ?? "unknown",
+    branch: branchOf(job, build, parent),
     status: statusOf(build),
     durationMs: build.duration ?? 0,
     startedAt: build.timestamp ?? 0,
   };
 }
 
-const TREE =
-  "jobs[_class,name,url,builds[number,result,duration,timestamp,building,actions[parameters[name,value]]]{0,10}]";
+function collectBuilds(job: JenkinsJobRaw, out: JenkinsBuild[], parent?: JenkinsJobRaw): void {
+  for (const build of job.builds ?? []) out.push(toBuild(job, build, parent));
+  for (const child of job.jobs ?? []) collectBuilds(child, out, job);
+}
 
-async function allBuilds(): Promise<JenkinsBuild[]> {
-  return cached("builds", async () => {
+const JOB_FIELDS =
+  "_class,name,fullName,url,builds[number,result,duration,timestamp,building,actions[parameters[name,value]]]{0,10}";
+/** Jobs nested in folders up to 5 levels deep. */
+const TREE = `jobs[${JOB_FIELDS},jobs[${JOB_FIELDS},jobs[${JOB_FIELDS},jobs[${JOB_FIELDS},jobs[${JOB_FIELDS}]]]]]`;
+
+async function allBuilds(serviceId?: string): Promise<JenkinsBuild[]> {
+  return cached(`builds:${serviceId ?? ""}`, async () => {
     const data = await jenkinsJson<JenkinsJobsResponse>(
       `/api/json?tree=${encodeURIComponent(TREE)}`,
+      serviceId,
     );
 
     const builds: JenkinsBuild[] = [];
-    for (const job of data.jobs ?? []) {
-      for (const build of job.builds ?? []) {
-        builds.push(toBuild(job, build));
-      }
-    }
+    for (const job of data.jobs ?? []) collectBuilds(job, builds);
 
     return builds
       .sort((a, b) => b.startedAt - a.startedAt)
@@ -234,13 +208,13 @@ function startOfToday(): number {
   return start.getTime();
 }
 
-export async function listJenkinsBuilds(): Promise<JenkinsBuild[]> {
-  return allBuilds();
+export async function listJenkinsBuilds(serviceId?: string): Promise<JenkinsBuild[]> {
+  return allBuilds(serviceId);
 }
 
-export async function jenkinsSummary(): Promise<JenkinsSummary> {
-  return cached("summary", async () => {
-    const builds = await allBuilds();
+export async function jenkinsSummary(serviceId?: string): Promise<JenkinsSummary> {
+  return cached(`summary:${serviceId ?? ""}`, async () => {
+    const builds = await allBuilds(serviceId);
     const finished = builds.filter((build) => build.status !== "running");
     const succeeded = builds.filter((build) => build.status === "success").length;
     const durationTotal = finished.reduce((total, build) => total + build.durationMs, 0);
@@ -259,40 +233,28 @@ export async function jenkinsSummary(): Promise<JenkinsSummary> {
   });
 }
 
-export async function triggerJenkinsBuild(job: string): Promise<void> {
-  const config = jenkinsConfig();
+export async function triggerJenkinsBuild(job: string, serviceId?: string): Promise<void> {
+  const config = await jenkinsConfig(serviceId);
   if (!config) throw new JenkinsNotConfiguredError();
 
-  const headers = await crumbHeaders();
-  let res: Response;
-
-  try {
-    res = await fetch(`${config.url}/job/${jobPath(job)}/build`, {
-      method: "POST",
-      headers: requestHeaders(config.auth, headers),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new JenkinsHttpError(502, `Cannot reach Jenkins: ${message}`);
-  }
-
-  if (!res.ok && res.status !== 201) {
-    throw new JenkinsHttpError(res.status, `Jenkins responded ${res.status}`);
-  }
+  await integrationFetch(config, `/job/${jobPath(job)}/build`, {
+    method: "POST",
+    headers: await crumbHeaders(config),
+  });
 
   // The next read should reflect the queued build.
-  cache.delete("builds");
-  cache.delete("summary");
+  cache.delete(`builds:${serviceId ?? ""}`);
+  cache.delete(`summary:${serviceId ?? ""}`);
 }
 
 export async function jenkinsConsole(
   job: string,
   num: number,
   tail: number,
+  serviceId?: string,
 ): Promise<string[]> {
-  return cached(`console:${job}:${num}:${tail}`, async () => {
-    const textRes = await jenkinsFetch(`/job/${jobPath(job)}/${num}/consoleText`);
+  return cached(`console:${serviceId ?? ""}:${job}:${num}:${tail}`, async () => {
+    const textRes = await jenkinsFetch(`/job/${jobPath(job)}/${num}/consoleText`, serviceId);
     const text = await textRes.text();
     return text.split("\n").slice(-tail);
   });

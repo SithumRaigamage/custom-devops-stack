@@ -3,16 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Cpu,
-  GitBranch,
   LayoutDashboard,
   Layers,
   MessageSquare,
   Server,
-  ShieldCheck,
   SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
+import { resolveServiceIcon } from "@/lib/service-icons";
+import { useRegistryServices } from "@/lib/use-settings";
 import { useServices } from "@/lib/use-services";
 import { cn } from "@/lib/utils";
 
@@ -22,19 +21,37 @@ interface NavItem {
   icon: LucideIcon;
 }
 
-const NAV_ITEMS: NavItem[] = [
+// Overview, AI Assistant and Settings are fixed. Every service comes from the services table.
+const TOP_ITEMS: NavItem[] = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/services", label: "Services", icon: Server },
-  { href: "/jenkins", label: "Jenkins", icon: GitBranch },
-  { href: "/sonarqube", label: "SonarQube", icon: ShieldCheck },
-  { href: "/ollama", label: "Ollama", icon: Cpu },
+  { href: "/services", label: "All services", icon: Server },
+];
+const BOTTOM_ITEMS: NavItem[] = [
   { href: "/assistant", label: "AI Assistant", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: SlidersHorizontal },
 ];
 
+const STATUS_DOT: Record<string, string> = {
+  healthy: "bg-ok",
+  unhealthy: "bg-bad",
+  stopped: "bg-muted",
+  starting: "bg-info animate-[dcpulse_1s_infinite]",
+  stopping: "bg-info animate-[dcpulse_1s_infinite]",
+  restarting: "bg-info animate-[dcpulse_1s_infinite]",
+};
+
+const LINK_CLASS = (active: boolean) =>
+  cn(
+    "flex min-h-[42px] w-full items-center gap-3 rounded-[9px] px-3 text-sm",
+    active ? "bg-brand-soft font-semibold text-brand-text" : "font-medium text-muted2",
+  );
+
 export function Sidebar({ unhealthyCount = 0 }: { unhealthyCount?: number }) {
   const pathname = usePathname();
   const { data: services } = useServices();
+  // The registry query is invalidated by every add/edit/delete/reorder, so changes show instantly.
+  const { data: registry = [] } = useRegistryServices();
+  const statusById = new Map((services ?? []).map((service) => [service.id, service.status]));
   const attention = services
     ? services.filter((service) => service.status === "unhealthy" || service.status === "stopped")
         .length
@@ -55,22 +72,12 @@ export function Sidebar({ unhealthyCount = 0 }: { unhealthyCount?: number }) {
       </div>
 
       <nav aria-label="Main" className="flex flex-col gap-0.5">
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
+        {TOP_ITEMS.map(({ href, label, icon: Icon }) => {
+          const active = pathname === href;
           const showBadge = href === "/services" && attention > 0;
 
           return (
-            <Link
-              key={href}
-              href={href}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex min-h-[42px] w-full items-center gap-3 rounded-[9px] px-3 text-sm",
-                active
-                  ? "bg-brand-soft font-semibold text-brand-text"
-                  : "font-medium text-muted2",
-              )}
-            >
+            <Link key={href} href={href} aria-current={active ? "page" : undefined} className={LINK_CLASS(active)}>
               <Icon className="size-[18px] shrink-0" strokeWidth={1.8} aria-hidden="true" />
               <span className="flex-1 text-left text-muted-foreground">{label}</span>
               {showBadge && (
@@ -78,6 +85,46 @@ export function Sidebar({ unhealthyCount = 0 }: { unhealthyCount?: number }) {
                   {attention}
                 </span>
               )}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <nav aria-label="Services" className="flex min-h-0 flex-col gap-0.5">
+        <span className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+          Services
+        </span>
+        {registry.length === 0 && (
+          <span className="px-3 py-2 text-xs text-muted-foreground">No services yet</span>
+        )}
+        {registry.map((service) => {
+          const href = `/services/${encodeURIComponent(service.id)}`;
+          const active = pathname === href;
+          const Icon = resolveServiceIcon(service.icon, service.id);
+          const status = statusById.get(service.id);
+
+          return (
+            <Link key={service.id} href={href} aria-current={active ? "page" : undefined} className={LINK_CLASS(active)}>
+              <Icon className="size-[18px] shrink-0" strokeWidth={1.8} aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate text-left text-muted-foreground">{service.name}</span>
+              <span
+                role="img"
+                aria-label={`Status: ${status ?? "unknown"}`}
+                title={status ?? "unknown"}
+                className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[status ?? ""] ?? "bg-muted")}
+              />
+            </Link>
+          );
+        })}
+      </nav>
+
+      <nav aria-label="App" className="flex flex-col gap-0.5">
+        {BOTTOM_ITEMS.map(({ href, label, icon: Icon }) => {
+          const active = pathname === href;
+          return (
+            <Link key={href} href={href} aria-current={active ? "page" : undefined} className={LINK_CLASS(active)}>
+              <Icon className="size-[18px] shrink-0" strokeWidth={1.8} aria-hidden="true" />
+              <span className="flex-1 text-left text-muted-foreground">{label}</span>
             </Link>
           );
         })}

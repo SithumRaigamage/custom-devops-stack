@@ -11,17 +11,20 @@ import { useSearch } from "@/components/search-provider";
 import type { Service } from "@/lib/api";
 import { filterServices } from "@/lib/filter-services";
 import { relativeTime } from "@/lib/activity";
+import { useIntegrationServiceId } from "@/lib/use-settings";
 import { useJenkinsBuilds } from "@/lib/use-jenkins";
 import { latestSonarProject, useSonarProject, useSonarProjects } from "@/lib/use-sonar";
 import { useServices } from "@/lib/use-services";
 
 export default function OverviewPage() {
   const { data: services, isPending, error } = useServices();
-  const { data: jenkins, isError: jenkinsError } = useJenkinsBuilds();
+  const jenkinsId = useIntegrationServiceId("jenkins");
+  const sonarId = useIntegrationServiceId("sonarqube");
+  const { data: jenkins, isError: jenkinsError } = useJenkinsBuilds(jenkinsId);
   const lastBuild = jenkins?.builds[0];
-  const { data: sonarProjects, isError: sonarError } = useSonarProjects();
+  const { data: sonarProjects, isError: sonarError } = useSonarProjects(sonarId);
   const latestProject = latestSonarProject(sonarProjects?.projects ?? []);
-  const { data: sonarDetail } = useSonarProject(latestProject?.key ?? null);
+  const { data: sonarDetail } = useSonarProject(sonarId, latestProject?.key ?? null);
   const { query } = useSearch();
   const [logsFor, setLogsFor] = useState<Service | null>(null);
 
@@ -115,7 +118,7 @@ export default function OverviewPage() {
               note={
                 lastBuild
                   ? `${lastBuild.job} · ${relativeTime(lastBuild.startedAt)}`
-                  : jenkins && !jenkins.configured
+                  : !jenkinsId || (jenkins && !jenkins.configured)
                     ? "Jenkins isn’t configured"
                     : jenkinsError
                       ? "Jenkins unavailable"

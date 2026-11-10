@@ -1,5 +1,5 @@
 const CACHE_TTL_MS = 30_000;
-const REQUEST_TIMEOUT_MS = 10_000;
+import { getIntegrationConfig, integrationFetch, type IntegrationConfig } from "./integrations.js";
 const PAGE_SIZE = 100;
 
 const METRIC_KEYS = [
@@ -90,15 +90,13 @@ export class SonarHttpError extends Error {
   }
 }
 
-function sonarConfig(): { url: string; token: string } | null {
-  const url = process.env.SONAR_URL?.trim().replace(/\/+$/, "");
-  const token = process.env.SONAR_TOKEN?.trim();
-  if (!url || !token) return null;
-  return { url, token };
+async function sonarConfig(serviceId?: string): Promise<IntegrationConfig | null> {
+  const config = await getIntegrationConfig("sonarqube", serviceId);
+  return config?.secret ? config : null;
 }
 
-export function isSonarConfigured(): boolean {
-  return sonarConfig() !== null;
+export async function isSonarConfigured(serviceId?: string): Promise<boolean> {
+  return (await sonarConfig(serviceId)) !== null;
 }
 
 const cache = new Map<string, { at: number; value: unknown }>();
@@ -112,31 +110,12 @@ async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
   return value;
 }
 
-async function sonarGet<T>(path: string, params: Record<string, string>): Promise<T> {
-  const config = sonarConfig();
+async function sonarGet<T>(path: string, params: Record<string, string>, serviceId?: string): Promise<T> {
+  const config = await sonarConfig(serviceId);
   if (!config) throw new SonarNotConfiguredError();
 
-  const url = new URL(`${config.url}${path}`);
-  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-        Accept: "application/json",
-      },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new SonarHttpError(502, `Cannot reach SonarQube: ${message}`);
-  }
-
-  if (!res.ok) {
-    throw new SonarHttpError(res.status, `SonarQube responded ${res.status}`);
-  }
-
+  const query = new URLSearchParams(params).toString();
+  const res = await integrationFetch(config, query ? `${path}?${query}` : path);
   return (await res.json()) as T;
 }
 
@@ -162,11 +141,11 @@ function numberOrNull(value: string | undefined): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-export async function listSonarProjects(): Promise<SonarProject[]> {
-  return cached("projects", async () => {
+export async function listSonarProjects(serviceId?: string): Promise<SonarProject[]> {
+  return cached(`projects:${serviceId ?? ""}`, async () => {
     const data = await sonarGet<ProjectsResponse>("/api/projects/search", {
       ps: String(PAGE_SIZE),
-    });
+    }, serviceId);
 
     return (data.components ?? [])
       .filter((component): component is { key: string; name?: string; lastAnalysisDate?: string } =>
@@ -180,20 +159,20 @@ export async function listSonarProjects(): Promise<SonarProject[]> {
   });
 }
 
-export async function sonarProject(key: string): Promise<SonarProjectDetail> {
-  return cached(`project:${key}`, async () => {
+export async function sonarProject(key: string, serviceId?: string): Promise<SonarProjectDetail> {
+  return cached(`project:${serviceId ?? ""}:${key}`, async () => {
     const [status, measures, analyses] = await Promise.all([
       sonarGet<ProjectStatusResponse>("/api/qualitygates/project_status", {
         projectKey: key,
-      }),
+      }, serviceId),
       sonarGet<MeasuresResponse>("/api/measures/component", {
         component: key,
         metricKeys: METRIC_KEYS,
-      }),
+      }, serviceId),
       sonarGet<AnalysesResponse>("/api/project_analyses/search", {
         project: key,
         ps: "1",
-      }),
+      }, serviceId),
     ]);
 
     const values = new Map(

@@ -10,7 +10,7 @@ export const COMMAND_TIMEOUT_MS = 120_000;
 const expandHome = (value: string) =>
   value === "~" || value.startsWith("~/") ? homedir() + value.slice(1) : value;
 
-export function serviceCwd(service: Service): string {
+export function serviceCwd(service: Pick<Service, "workingDir" | "folder">): string {
   const folder = expandHome(service.workingDir || service.folder);
   return isAbsolute(folder) ? folder : resolve(expandHome(process.env.STACK_ROOT || "."), folder);
 }
@@ -38,12 +38,36 @@ export function splitCommand(command: string): string[] {
   return parts;
 }
 
+export const SHELL_PATH = "/bin/zsh";
+
+/**
+ * How a saved command is executed. Default: argv split, no shell. With run_in_shell:
+ * `/bin/zsh -i -c "<command>"` so aliases and functions from ~/.zshrc work, and the
+ * command runs exactly as typed.
+ */
+export function commandInvocation(
+  command: string,
+  runInShell: boolean,
+): { file: string; args: string[]; mode: "exec" | "shell" } {
+  if (runInShell) {
+    if (!command.trim()) throw new Error("Command cannot be empty");
+    return { file: SHELL_PATH, args: ["-i", "-c", command], mode: "shell" };
+  }
+  const [file, ...args] = splitCommand(command);
+  return { file, args, mode: "exec" };
+}
+
+/** Text recorded in the audit log for a run, including the execution mode. */
+export function describeInvocation(command: string, runInShell: boolean): string {
+  return runInShell ? `${SHELL_PATH} -i -c ${JSON.stringify(command)}` : command;
+}
+
 export async function runCustomCommand(
-  service: Service,
+  service: Pick<Service, "workingDir" | "folder" | "runInShell">,
   command: string,
   timeoutMs = COMMAND_TIMEOUT_MS,
 ): Promise<{ stdout: string; stderr: string }> {
-  const [file, ...args] = splitCommand(command);
+  const { file, args } = commandInvocation(command, service.runInShell);
   return execFileAsync(file, args, {
     cwd: serviceCwd(service),
     timeout: timeoutMs,

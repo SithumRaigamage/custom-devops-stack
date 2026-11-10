@@ -59,6 +59,7 @@ function consoleLogLine(raw: string): LogLine {
 }
 
 export interface JenkinsConsoleSource {
+  serviceId: string;
   job: string;
   num: number;
   status?: "success" | "failed" | "unstable" | "aborted" | "running";
@@ -67,16 +68,18 @@ export interface JenkinsConsoleSource {
 type StreamState = "connecting" | "live" | "reconnecting" | "paused";
 
 type LogsDrawerProps = {
-  onClose: () => void;
+  onClose?: () => void;
+  /** Render as a normal page section (no overlay, no close button). */
+  inline?: boolean;
 } & (
   | { service: Service; console?: never }
   | { service?: never; console: JenkinsConsoleSource }
 );
 
-export function LogsDrawer({ service, console: consoleSource, onClose }: LogsDrawerProps) {
+export function LogsDrawer({ service, console: consoleSource, onClose, inline = false }: LogsDrawerProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const onCloseRef = useRef<() => void>(onClose ?? (() => undefined));
+  onCloseRef.current = onClose ?? (() => undefined);
 
   const serviceId = service?.id;
   const consoleJob = consoleSource?.job;
@@ -103,11 +106,11 @@ export function LogsDrawer({ service, console: consoleSource, onClose }: LogsDra
   const { data, isPending, error } = useQuery<LogLine[]>({
     queryKey: serviceId
       ? ["logs", serviceId, TAIL]
-      : ["jenkins-console", consoleJob, consoleNum, TAIL],
+      : ["jenkins-console", consoleSource?.serviceId, consoleJob, consoleNum, TAIL],
     queryFn: async ({ signal }) => {
       if (serviceId) return fetchServiceLogs(serviceId, TAIL, signal);
       if (consoleJob && consoleNum) {
-        const result = await fetchJenkinsConsole(consoleJob, consoleNum, TAIL, signal);
+        const result = await fetchJenkinsConsole(consoleSource!.serviceId, consoleJob, consoleNum, TAIL, signal);
         return result.lines.map(consoleLogLine);
       }
       return [];
@@ -132,6 +135,7 @@ export function LogsDrawer({ service, console: consoleSource, onClose }: LogsDra
   }, [data]);
 
   useEffect(() => {
+    if (inline) return;
     closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onCloseRef.current();
@@ -234,19 +238,24 @@ export function LogsDrawer({ service, console: consoleSource, onClose }: LogsDra
   const badge = service?.status ?? consoleSource?.status;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <button
-        type="button"
-        aria-label="Close logs"
-        onClick={() => onCloseRef.current()}
-        className="absolute inset-0 cursor-default bg-overlay"
-      />
+    <div className={inline ? "" : "fixed inset-0 z-50 flex justify-end"}>
+      {!inline && (
+        <button
+          type="button"
+          aria-label="Close logs"
+          onClick={() => onCloseRef.current()}
+          className="absolute inset-0 cursor-default bg-overlay"
+        />
+      )}
 
       <aside
-        role="dialog"
-        aria-modal="true"
+        {...(inline ? {} : { role: "dialog", "aria-modal": true })}
         aria-labelledby="logs-title"
-        className="relative flex h-full w-[600px] max-w-full animate-[drawer-in_0.22s_ease-out] flex-col border-l border-border2 bg-sidebar shadow-[var(--shadow-drawer)]"
+        className={
+          inline
+            ? "relative flex h-[560px] flex-col overflow-hidden rounded-[12px] border border-border2 bg-sidebar"
+            : "relative flex h-full w-[600px] max-w-full animate-[drawer-in_0.22s_ease-out] flex-col border-l border-border2 bg-sidebar shadow-[var(--shadow-drawer)]"
+        }
       >
         <div className="flex items-center gap-3 border-b border-border px-5 py-[18px]">
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -258,15 +267,17 @@ export function LogsDrawer({ service, console: consoleSource, onClose }: LogsDra
             </span>
           </div>
           {badge && <StatusBadge status={badge} />}
-          <button
-            ref={closeRef}
-            type="button"
-            onClick={() => onCloseRef.current()}
-            aria-label="Close logs"
-            className="inline-flex size-10 shrink-0 items-center justify-center rounded-[8px] border border-border2 bg-card2 text-fg2"
-          >
-            <X className="size-4" strokeWidth={2} aria-hidden="true" />
-          </button>
+          {!inline && (
+            <button
+              ref={closeRef}
+              type="button"
+              onClick={() => onCloseRef.current()}
+              aria-label="Close logs"
+              className="inline-flex size-10 shrink-0 items-center justify-center rounded-[8px] border border-border2 bg-card2 text-fg2"
+            >
+              <X className="size-4" strokeWidth={2} aria-hidden="true" />
+            </button>
+          )}
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col bg-log-bg">

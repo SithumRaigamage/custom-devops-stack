@@ -4,17 +4,32 @@ USER root
 
 # Install basic dependencies
 RUN apt-get update && \
-    apt-get install -y wget apt-transport-https gnupg lsb-release libatomic1 && \
+    apt-get install -y wget ca-certificates libatomic1 && \
     rm -rf /var/lib/apt/lists/*
 
-# Add Trivy repository (using bookworm as trixie is not yet supported)
-RUN wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | tee /usr/share/keyrings/trivy.gpg > /dev/null && \
-    echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb bookworm main" | tee -a /etc/apt/sources.list.d/trivy.list
-
-# Install Trivy and the Docker CLI only (the engine runs on the host via docker.sock)
+# Docker CLI only (the engine runs on the host via docker.sock)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends trivy docker-cli && \
+    apt-get install -y --no-install-recommends docker-cli && \
     rm -rf /var/lib/apt/lists/*
+
+# Trivy from the pinned GitHub release, checksum-verified. The aquasecurity apt repo
+# can't be verified on Debian trixie (its signing key is rejected by apt's sqv), so
+# the .deb repo is no longer used.
+ARG TRIVY_VERSION=0.76.2
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) trivyArch='64bit' ;; \
+        arm64) trivyArch='ARM64' ;; \
+        *) echo "unsupported architecture" >&2; exit 1 ;; \
+    esac; \
+    base="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"; \
+    file="trivy_${TRIVY_VERSION}_Linux-${trivyArch}.tar.gz"; \
+    cd /tmp; \
+    wget -q "${base}/${file}" "${base}/trivy_${TRIVY_VERSION}_checksums.txt"; \
+    grep " ${file}\$" "trivy_${TRIVY_VERSION}_checksums.txt" | sha256sum -c -; \
+    tar -xzf "${file}" -C /usr/local/bin trivy; \
+    rm -f "${file}" "trivy_${TRIVY_VERSION}_checksums.txt"; \
+    trivy --version
 
 # gosu lets the entrypoint start as root just long enough to fix docker.sock
 # group access, then drop to the unprivileged jenkins user for the real process.

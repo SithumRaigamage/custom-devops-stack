@@ -16,7 +16,7 @@ export const EnvSchema = z.object({
 	HOST: Host,
 
 	// -----------------------------------------------------------------------
-	// Stack root – where services.yaml lives (relative to the api dir)
+	// Stack root – parent directory containing service folders
 	// -----------------------------------------------------------------------
 	STACK_ROOT: z.string().default("."),
 

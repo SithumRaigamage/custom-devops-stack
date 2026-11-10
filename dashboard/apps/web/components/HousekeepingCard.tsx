@@ -189,7 +189,7 @@ export function HousekeepingCard() {
             <p className="m-0 text-sm text-muted-foreground">Looking for backups…</p>
           ) : (backups.data ?? []).length === 0 ? (
             <p className="m-0 text-sm text-muted-foreground">
-              No services in services.yaml, so there is nothing to back up.
+              No services are configured, so there is nothing to back up.
             </p>
           ) : (
             <ul className="m-0 flex list-none flex-col gap-0 p-0">
@@ -226,7 +226,7 @@ export function HousekeepingCard() {
             </h2>
             <p className="m-0 mt-1 text-xs text-muted-foreground">
               Only dangling images and build cache are removed. Images used by any service in
-              services.yaml, or by any container, are never touched.
+              configured service, or by any container, are never touched.
             </p>
 
             {preview.error ? (

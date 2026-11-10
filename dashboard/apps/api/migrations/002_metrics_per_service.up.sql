@@ -1,4 +1,4 @@
--- Metrics are keyed by the Compose service id from services.yaml (text), not by
+-- Metrics are keyed by the Compose service id from the service registry (text), not by
 -- the optional row id in the mirrored services table.
 
 ALTER TABLE metrics ADD COLUMN IF NOT EXISTS service_key TEXT NOT NULL DEFAULT '';

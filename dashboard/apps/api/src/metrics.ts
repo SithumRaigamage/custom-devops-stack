@@ -101,7 +101,7 @@ export function startMetricsSampler(fallbackServices: Service[]): void {
   started = true;
 
   const sample = () => {
-    // Reload services.yaml so registry edits are reflected without a restart.
+    // Read the database-backed registry snapshot so edits are reflected immediately.
     let services = fallbackServices;
     try {
       services = loadServices();

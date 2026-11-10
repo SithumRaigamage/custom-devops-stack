@@ -17,7 +17,7 @@ The entire stack never leaves your machine and is **not exposed to the internet*
 ├── apps/web      # Next.js App Router, Tailwind + shadcn/ui, port 3001
 ├── docs/         # DESIGN.md is the visual source of truth
 ├── docker-compose.yml # PostgreSQL container for auth + dashboard data
-├── services.yaml # Docker Compose folders (Jenkins, SonarQube, Open WebUI, Ollama)
+├── services.yaml.bak # One-time migration backup of the original service registry
 └── .env          # local env vars (gitignored)
 ```
 
@@ -28,7 +28,7 @@ The entire stack never leaves your machine and is **not exposed to the internet*
 | **API** | Fastify + TypeScript | 4000 | `/api/services`, `/api/services/:id/:action`, `/api/services/:id/logs` |
 | **Dashboard** | Next.js 16 + Tailwind + shadcn/ui | 3001 | All seven pages: Overview, Services, Jenkins, SonarQube, Ollama, AI Assistant, Settings |
 | **PostgreSQL** | Docker (`postgres:16-alpine`) | 5432 | Users, sessions and dashboard tables (auth, settings, metrics, assistant history) |
-| **Docker Compose** | docker compose | per-service | Jenkins, SonarQube, Open WebUI, Ollama each live in their own folder listed in `services.yaml` |
+| **Docker Compose** | docker compose | per-service | Compose services live in folders managed from the dashboard database |
 | **LLM runtime** | Ollama | 11434 | Serves local models (e.g. `gpt-oss:20b`) |
 
 ## Phases A-E (checklist)
@@ -80,7 +80,7 @@ The API stores its data in PostgreSQL. `DATABASE_URL` defaults to
 
 ## Data persistence
 
-Each service's Docker Compose state lives in its own folder (`services.yaml`). The dashboard keeps its own data (admin account, sessions, settings, metrics and assistant history) in the PostgreSQL container; live service status and metrics are read from Docker on every request.
+Services are stored in the PostgreSQL `services` table and managed exclusively through Settings. On the first API startup after this migration, the legacy `services.yaml` is imported and renamed to `services.yaml.bak`. Service folders remain on disk, while live status and metrics are read from Docker on every request. Compose services use Docker Compose; custom services use validated argument-array commands with no shell.
 
 ## Accessibility
 

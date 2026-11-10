@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { useToast } from "@/components/toast";
 import {
   sendTestNotification,
+  testRegistryService,
   type AlertRuleToggles,
   type ChannelResult,
   type NotificationPreferences,
@@ -21,6 +22,7 @@ import {
   useSaveSettings,
   useSettings,
   useUpdateRegistryService,
+  useReorderRegistryServices,
 } from "@/lib/use-settings";
 
 const INTERVAL_OPTIONS = [2, 4, 10, 30];
@@ -101,25 +103,19 @@ interface SettingsForm {
 
 interface ServiceForm {
   name: string;
+  description: string;
   folder: string;
+  type: "compose" | "custom";
+  composeFile: string;
   port: string;
   url: string;
-  healthPath: string;
+  healthUrl: string;
   icon: string;
-  startCommand: string;
-  stopCommand: string;
+  startCmd: string;
+  stopCmd: string;
+  restartCmd: string;
+  logsCmd: string;
 }
-
-const COMMAND_OPTIONS = [
-  { value: "", label: "None" },
-  { value: "jenkins-start", label: "jenkins-start" },
-  { value: "jenkins-stop", label: "jenkins-stop" },
-  { value: "sonar-start", label: "sonar-start" },
-  { value: "sonar-stop", label: "sonar-stop" },
-  { value: "mongo-start", label: "mongo-start" },
-  { value: "mongo-stop", label: "mongo-stop" },
-  { value: "webui", label: "webui (use action)" },
-] as const;
 
 function healthPathFor(service?: RegistryService): string {
   if (!service) return "/";
@@ -158,6 +154,8 @@ export default function SettingsPage() {
   const { data: services = [], isPending: servicesPending } = useRegistryServices();
   const { data: folders = [] } = useRegistryFolders();
   const deleteMutation = useDeleteRegistryService();
+  const reorderMutation = useReorderRegistryServices();
+  const [draggedServiceId, setDraggedServiceId] = useState<string | null>(null);
 
   const [form, setForm] = useState<SettingsForm | null>(null);
   const [dirtyChannels, setDirtyChannels] = useState({ discord: false, telegram: false });
@@ -274,7 +272,7 @@ export default function SettingsPage() {
 
   async function handleRemove(service: RegistryService) {
     const confirmed = window.confirm(
-      `Remove ${service.name} from services.yaml?\n\nRunning containers and their data are not touched.`,
+      `Remove ${service.name}?\n\nRunning containers and their data are not touched.`,
     );
     if (!confirmed) return;
 
@@ -541,7 +539,7 @@ export default function SettingsPage() {
           <div className="flex flex-col gap-1">
             <h2 className="m-0 text-base font-bold text-foreground">Manage services</h2>
             <p className="m-0 text-xs text-muted-foreground">
-              Add, edit or remove entries in services.yaml. Running containers are not changed.
+              Add, edit, remove, test, and reorder services stored in the dashboard database.
             </p>
           </div>
           <button
@@ -564,6 +562,21 @@ export default function SettingsPage() {
             {services.map((service) => (
               <li
                 key={service.id}
+                draggable
+                onDragStart={() => setDraggedServiceId(service.id)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => {
+                  if (!draggedServiceId || draggedServiceId === service.id) return;
+                  const ids = services.map((item) => item.id);
+                  const from = ids.indexOf(draggedServiceId);
+                  const to = ids.indexOf(service.id);
+                  ids.splice(from, 1);
+                  ids.splice(to, 0, draggedServiceId);
+                  setDraggedServiceId(null);
+                  void reorderMutation.mutateAsync(ids).catch((err) =>
+                    toast(err instanceof Error ? err.message : "Could not reorder services", "error"),
+                  );
+                }}
                 className="flex flex-wrap items-center gap-3 border-t border-track py-3"
               >
                 <div className="min-w-0 flex-1">
@@ -632,8 +645,9 @@ function ServiceDialog({
   const createMutation = useCreateRegistryService();
   const updateMutation = useUpdateRegistryService();
   const pending = createMutation.isPending || updateMutation.isPending;
+  const [testing, setTesting] = useState(false);
 
-  const usableFolders = folders.filter((folder) => folder.composeFile);
+  const usableFolders = folders;
   const folderOptions =
     service && !usableFolders.some((folder) => folder.folder === service.relativeFolder)
       ? [
@@ -648,18 +662,55 @@ function ServiceDialog({
 
   const [form, setForm] = useState<ServiceForm>(() => ({
     name: service?.name ?? "",
+    description: service?.description ?? service?.desc ?? "",
     folder: service?.relativeFolder ?? usableFolders[0]?.folder ?? "",
+    type: service?.type ?? "compose",
+    composeFile: service?.composeFile ?? usableFolders[0]?.composeFile ?? "docker-compose.yml",
     port: portFor(service),
     url: service?.url ?? "http://localhost",
-    healthPath: healthPathFor(service),
+    healthUrl: service?.healthUrl ?? service?.health ?? "",
     icon: service?.icon ?? "server",
-    startCommand: service?.startCommand ?? "",
-    stopCommand: service?.stopCommand ?? "",
+    startCmd: service?.startCmd ?? "",
+    stopCmd: service?.stopCmd ?? "",
+    restartCmd: service?.restartCmd ?? "",
+    logsCmd: service?.logsCmd ?? "",
   }));
   const [error, setError] = useState<string | null>(null);
 
   function update<K extends keyof ServiceForm>(key: K, value: ServiceForm[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function handleTest() {
+    setError(null);
+    setTesting(true);
+    try {
+      const result = await testRegistryService({
+        name: form.name.trim(),
+        description: form.description.trim(),
+        folder: form.folder,
+        type: form.type,
+        composeFile: form.composeFile.trim() || "docker-compose.yml",
+        port: Number(form.port),
+        url: form.url.trim(),
+        healthUrl: form.healthUrl.trim() || undefined,
+        healthPath: "/",
+        icon: form.icon,
+        ...(form.startCmd ? { startCmd: form.startCmd } : {}),
+        ...(form.stopCmd ? { stopCmd: form.stopCmd } : {}),
+        ...(form.restartCmd ? { restartCmd: form.restartCmd } : {}),
+        ...(form.logsCmd ? { logsCmd: form.logsCmd } : {}),
+      });
+      if (!result.folder || !result.composeFile || !result.health) {
+        setError(`Test failed: folder ${result.folder ? "ok" : "missing"}, compose file ${result.composeFile ? "ok" : "missing"}, health ${result.health ? "ok" : "no response"}`);
+      } else {
+        setError(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Service test failed");
+    } finally {
+      setTesting(false);
+    }
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -675,14 +726,18 @@ function ServiceDialog({
 
     const input: ServiceInput = {
       name: form.name.trim(),
+      description: form.description.trim(),
       folder: form.folder,
+      type: form.type,
+      composeFile: form.composeFile.trim() || "docker-compose.yml",
       port,
       url: form.url.trim(),
-      healthPath: form.healthPath.trim() || "/",
+      healthUrl: form.healthUrl.trim() || undefined,
       icon: form.icon,
-      ...(service?.desc ? { desc: service.desc } : {}),
-      ...(form.startCommand ? { startCommand: form.startCommand } : {}),
-      ...(form.stopCommand ? { stopCommand: form.stopCommand } : {}),
+      ...(form.startCmd ? { startCmd: form.startCmd } : {}),
+      ...(form.stopCmd ? { stopCmd: form.stopCmd } : {}),
+      ...(form.restartCmd ? { restartCmd: form.restartCmd } : {}),
+      ...(form.logsCmd ? { logsCmd: form.logsCmd } : {}),
     };
 
     try {
@@ -691,6 +746,7 @@ function ServiceDialog({
       } else {
         await createMutation.mutateAsync(input);
       }
+
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the service");
@@ -715,7 +771,7 @@ function ServiceDialog({
           {service ? `Edit ${service.name}` : "Add service"}
         </h2>
         <p className="m-0 mt-1 text-xs text-muted-foreground">
-          Writes to services.yaml only.
+          Saved in the dashboard database. Changes take effect immediately.
         </p>
 
         <form onSubmit={(event) => void handleSubmit(event)} className="mt-5 flex flex-col gap-4">
@@ -728,6 +784,16 @@ function ServiceDialog({
               placeholder="My service"
               className={INPUT_CLASS}
               required
+            />
+          </label>
+
+          <label className={LABEL_CLASS}>
+            Description
+            <input
+              type="text"
+              value={form.description}
+              onChange={(event) => update("description", event.target.value)}
+              className={INPUT_CLASS}
             />
           </label>
 
@@ -747,9 +813,33 @@ function ServiceDialog({
               ))}
             </select>
             <span className="text-xs font-normal text-muted-foreground">
-              Subfolders of the stack root that contain a compose file.
+              Browseable folders under the stack root.
             </span>
           </label>
+
+          <label className={LABEL_CLASS}>
+            Type
+            <select
+              value={form.type}
+              onChange={(event) => update("type", event.target.value as ServiceForm["type"])}
+              className={INPUT_CLASS}
+            >
+              <option value="compose">Compose</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+
+          {form.type === "compose" && (
+            <label className={LABEL_CLASS}>
+              Compose file
+              <input
+                type="text"
+                value={form.composeFile}
+                onChange={(event) => update("composeFile", event.target.value)}
+                className={`${INPUT_CLASS} font-mono text-[13px]`}
+              />
+            </label>
+          )}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className={LABEL_CLASS}>
@@ -794,47 +884,47 @@ function ServiceDialog({
           </label>
 
           <label className={LABEL_CLASS}>
-            Health path
+            Health URL
             <input
-              type="text"
-              value={form.healthPath}
-              onChange={(event) => update("healthPath", event.target.value)}
-              placeholder="/health"
-              className={`${INPUT_CLASS} font-mono text-[13px]`}
+              type="url"
+              value={form.healthUrl}
+              onChange={(event) => update("healthUrl", event.target.value)}
+              placeholder="http://localhost:8080/health"
+              className={INPUT_CLASS}
               required
             />
           </label>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          {form.type === "custom" && <div className="grid gap-4 sm:grid-cols-2">
             <label className={LABEL_CLASS}>
               Start command
-              <select
-                value={form.startCommand}
-                onChange={(event) => update("startCommand", event.target.value)}
-                className={INPUT_CLASS}
-              >
-                {COMMAND_OPTIONS.map((command) => (
-                  <option key={command.value} value={command.value}>{command.label}</option>
-                ))}
-              </select>
+              <input value={form.startCmd} onChange={(event) => update("startCmd", event.target.value)} className={INPUT_CLASS} />
             </label>
             <label className={LABEL_CLASS}>
               Stop command
-              <select
-                value={form.stopCommand}
-                onChange={(event) => update("stopCommand", event.target.value)}
-                className={INPUT_CLASS}
-              >
-                {COMMAND_OPTIONS.map((command) => (
-                  <option key={command.value} value={command.value}>{command.label}</option>
-                ))}
-              </select>
+              <input value={form.stopCmd} onChange={(event) => update("stopCmd", event.target.value)} className={INPUT_CLASS} />
             </label>
-          </div>
+            <label className={LABEL_CLASS}>
+              Restart command
+              <input value={form.restartCmd} onChange={(event) => update("restartCmd", event.target.value)} className={INPUT_CLASS} />
+            </label>
+            <label className={LABEL_CLASS}>
+              Logs command
+              <input value={form.logsCmd} onChange={(event) => update("logsCmd", event.target.value)} className={INPUT_CLASS} />
+            </label>
+          </div>}
 
           {error && <p className="m-0 text-[13px] text-bad">{error}</p>}
 
           <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={pending || testing}
+              className="h-10 rounded-[10px] border border-border2 px-4 text-[13px] font-semibold text-foreground disabled:opacity-60"
+            >
+              {testing ? "Testing…" : "Test"}
+            </button>
             <button
               type="button"
               onClick={onClose}

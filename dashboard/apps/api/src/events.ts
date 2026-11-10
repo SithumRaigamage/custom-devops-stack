@@ -122,8 +122,7 @@ export function startServiceMonitor(fallbackServices: Service[]): () => void {
     ticking = true;
 
     try {
-      // Registry edits rewrite services.yaml; reload every tick so added and
-      // removed services are monitored without restarting the API.
+      // Refresh the database-backed registry so edits take effect without restart.
       let services = fallbackServices;
       try {
         services = loadServices();

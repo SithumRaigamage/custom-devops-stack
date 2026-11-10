@@ -1,8 +1,10 @@
 import "dotenv/config";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, renameSync } from "node:fs";
+import { homedir } from "node:os";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { bigint, integer, pgTable, real, serial, text } from "drizzle-orm/pg-core";
+import { parse } from "yaml";
 
 // ---------------------------------------------------------------------------
 // PostgreSQL connection (docker compose up -d postgres)
@@ -40,14 +42,96 @@ try {
 
 export const db = drizzle(pool);
 
+async function importLegacyServices(): Promise<void> {
+  const legacyPath = new URL("../../../services.yaml", import.meta.url);
+  const backupPath = new URL("../../../services.yaml.bak", import.meta.url);
+  const { rows } = await pool.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM services");
+  if (Number(rows[0]?.count ?? 0) > 0 || !existsSync(legacyPath)) return;
+
+  const doc = parse(readFileSync(legacyPath, "utf8")) as { services?: Array<Record<string, unknown>> };
+  const entries = Array.isArray(doc?.services) ? doc.services : [];
+  const now = Date.now();
+  for (const [index, entry] of entries.entries()) {
+    const folder = String(entry.folder ?? "");
+    const workingDir = folder === "~" || folder.startsWith("~/")
+      ? `${homedir()}${folder.slice(1)}`
+      : folder;
+    const url = String(entry.url ?? "");
+    const health = String(entry.health ?? `${url}/`);
+    const portValue = Number(entry.port ?? (() => {
+      try {
+        const parsed = new URL(url);
+        return parsed.port ? Number(parsed.port) : null;
+      } catch {
+        return null;
+      }
+    })());
+    await pool.query(
+      `INSERT INTO services
+        (compose_id, name, description, folder, url, health, type, working_dir,
+         compose_file, port, health_url, start_cmd, stop_cmd, restart_cmd, logs_cmd,
+         sort_order, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,'compose',$7,$8,$9,$6,$10,$11,'docker compose restart','docker compose logs',
+               $12,$13,$13)`,
+      [
+        String(entry.id ?? `service-${index + 1}`),
+        String(entry.name ?? entry.id ?? "Service"),
+        String(entry.desc ?? ""),
+        folder,
+        url,
+        health,
+        workingDir,
+        String(entry.composeFile ?? "docker-compose.yml"),
+        Number.isInteger(portValue) ? portValue : null,
+        typeof entry.startCommand === "string" ? entry.startCommand : null,
+        typeof entry.stopCommand === "string" ? entry.stopCommand : null,
+        index,
+        now,
+      ],
+    );
+  }
+  renameSync(legacyPath, backupPath);
+}
+
+await importLegacyServices();
+await pool.query(
+  `UPDATE services SET working_dir = $1 || SUBSTRING(working_dir FROM 2)
+   WHERE working_dir LIKE '~/%'`,
+  [homedir()],
+);
+
 // services – mirror of the Docker Compose inventory (for FK convenience)
 export const services = pgTable("services", {
   id: serial("id").primaryKey(),
   compose_id: text("compose_id").notNull().unique(),
   name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  icon: text("icon"),
+  type: text("type").notNull().default("compose"),
   folder: text("folder").notNull(),
+  working_dir: text("working_dir"),
+  compose_file: text("compose_file").notNull().default("docker-compose.yml"),
+  port: integer("port"),
   url: text("url").notNull(),
   health: text("health").notNull(),
+  health_url: text("health_url"),
+  start_cmd: text("start_cmd"),
+  stop_cmd: text("stop_cmd"),
+  restart_cmd: text("restart_cmd"),
+  logs_cmd: text("logs_cmd"),
+  sort_order: integer("sort_order").notNull().default(0),
+  created_at: bigint("created_at", { mode: "number" }).notNull(),
+  updated_at: bigint("updated_at", { mode: "number" }).notNull(),
+});
+
+export const serviceRuns = pgTable("service_runs", {
+  id: serial("id").primaryKey(),
+  service_key: text("service_key").notNull(),
+  action: text("action").notNull(),
+  command: text("command").notNull(),
+  ok: integer("ok").notNull(),
+  output: text("output").notNull().default(""),
+  ts: bigint("ts", { mode: "number" }).notNull(),
 });
 
 // users – local account (single-user)

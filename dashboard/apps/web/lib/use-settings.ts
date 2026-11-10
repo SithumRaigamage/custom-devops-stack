@@ -9,6 +9,7 @@ import {
   fetchSettings,
   saveSettings,
   updateRegistryService,
+  reorderRegistryServices,
   type ServiceInput,
   type SettingsPatch,
 } from "./api";
@@ -57,7 +58,7 @@ function useInvalidateRegistry() {
   return () => {
     void queryClient.invalidateQueries({ queryKey: REGISTRY_SERVICES_QUERY_KEY });
     void queryClient.invalidateQueries({ queryKey: REGISTRY_FOLDERS_QUERY_KEY });
-    // The dashboard list is served from the same services.yaml.
+    // Overview and services pages share the database-backed registry query.
     void queryClient.invalidateQueries({ queryKey: ["services"] });
   };
 }
@@ -83,6 +84,14 @@ export function useDeleteRegistryService() {
   const invalidate = useInvalidateRegistry();
   return useMutation({
     mutationFn: (id: string) => deleteRegistryService(id),
+    onSuccess: invalidate,
+  });
+}
+
+export function useReorderRegistryServices() {
+  const invalidate = useInvalidateRegistry();
+  return useMutation({
+    mutationFn: (ids: string[]) => reorderRegistryServices(ids),
     onSuccess: invalidate,
   });
 }

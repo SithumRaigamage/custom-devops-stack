@@ -1,7 +1,7 @@
 # StackPilot
 
 A local, single-user dashboard for a custom DevOps stack. It shows the health, CPU and
-memory of the Compose stacks listed in `services.yaml`, lets you start/stop/restart them
+memory of the services stored in PostgreSQL, lets you start/stop/restart them
 and read their logs, and keeps its own data (admin account, sessions, settings) in
 PostgreSQL.
 
@@ -14,7 +14,7 @@ Docker logs directly, and Open opens the configured service URL.
 - `apps/api` — Fastify + TypeScript API on `http://127.0.0.1:4000`
 - `apps/web` — Next.js 16 dashboard on `http://localhost:3001`
 - `docker-compose.yml` — PostgreSQL 16 for the dashboard API
-- `services.yaml` — inventory of the Docker Compose stacks to manage
+- PostgreSQL `services` table — inventory of Compose and custom services to manage
 
 ## Prerequisites
 
@@ -76,28 +76,13 @@ STACK_ROOT=.
 Change `DATABASE_URL` only if you use different `POSTGRES_USER`, `POSTGRES_PASSWORD`,
 `POSTGRES_DB` or host settings for the Compose service.
 
-### 4. Check `services.yaml` (optional)
+### 4. Manage services in Settings
 
-Each entry points at a Compose folder, e.g.:
-
-```yaml
-- id: jenkins
-  name: Jenkins
-  desc: CI/CD automation server
-  image: custom-jenkins:latest
-  folder: ~/Other/02-DevOps-Lab/custom-devops-stack/jenkins
-  composeFile: docker-compose.yml
-  url: http://localhost:8080
-  health: http://localhost:8080/login
-  startCommand: jenkins-start
-  stopCommand: jenkins-stop
-```
-
-Adjust `folder`, `url` and `health` to your machine. The folder's basename must match
-the Compose project name (the `com.docker.compose.project` label on its containers) —
-`jenkins` above. The dashboard work runs without these stacks; they simply show as
-stopped. Start/stop/restart only accepts ids listed in this file. `startCommand` and
-`stopCommand` must be one of the allowlisted operator commands available in zsh.
+Use **Settings → Manage services** to add, edit, test, delete, and reorder services.
+The first API startup imports the legacy `services.yaml` and renames it to
+`services.yaml.bak`; after that, service changes are database-backed and require no
+file edits or restart. Compose services use Docker Compose, while custom services use
+validated argument-array commands without a shell.
 
 ### 5. Run the app
 

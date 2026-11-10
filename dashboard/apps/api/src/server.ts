@@ -3,7 +3,7 @@ import Fastify, { type FastifyReply } from "fastify";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import { z } from "zod";
-import { runCompose, runOperatorCommand, serviceCwd } from "./compose.js";
+import { runCompose, runCustomCommand, serviceCwd } from "./compose.js";
 import { loadServices } from "./services.js";
 import { getServiceDetails } from "./status.js";
 import { isDockerAvailable, listContainersByProject, projectNameForFolder } from "./docker.js";
@@ -54,6 +54,8 @@ import {
   listRegistryServices,
   RegistryError,
   updateService,
+  testService,
+  reorderServices,
 } from "./registry.js";
 import {
   createImageBackup,
@@ -79,6 +81,20 @@ const ACTION_VERB = {
   stop: "stopped",
   restart: "restarted",
 } as const;
+
+async function recordServiceRun(
+  serviceId: string,
+  action: string,
+  command: string,
+  ok: boolean,
+  output: string,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO service_runs (service_key, action, command, ok, output, ts)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [serviceId, action, command, ok ? 1 : 0, output.slice(0, 100_000), Date.now()],
+  );
+}
 
 // Rate-limit tiers per requirement.
 const RATE_LIMIT = {
@@ -212,8 +228,19 @@ function parseTail(raw: string | undefined): number | null {
   return Number.isInteger(tail) && tail >= 1 && tail <= MAX_TAIL ? tail : null;
 }
 
-// Background monitors keep this snapshot; request handling re-reads services.yaml
-// so registry edits take effect immediately.
+function requestParams(req: { params: unknown }): Record<string, string> {
+  return req.params as Record<string, string>;
+}
+
+function requestQuery(req: { query: unknown }): Record<string, string | undefined> {
+  return req.query as Record<string, string | undefined>;
+}
+
+function requestBody(req: { body: unknown }): Record<string, unknown> {
+  return req.body as Record<string, unknown>;
+}
+
+// Database-backed service snapshots are refreshed after registry mutations.
 const initialServices = loadServices();
 
 const app = Fastify({
@@ -326,10 +353,10 @@ app.post(
     config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
   },
   async (req, reply) => {
-    const service = loadServices().find((entry) => entry.id === req.params.id);
-    if (!service) return reply.code(404).send({ error: `Unknown service "${req.params.id}"` });
+    const service = loadServices().find((entry) => entry.id === requestParams(req).id);
+    if (!service) return reply.code(404).send({ error: `Unknown service "${requestParams(req).id}"` });
 
-    const action = req.params.action;
+    const action = requestParams(req).action;
 
     const user = await getSessionUser(req);
 
@@ -338,46 +365,33 @@ app.post(
     else setIntentionalStop(service.id, false);
 
     try {
-      const command =
-        action === "start" ? service.startCommand : service.stopCommand;
-      if (!command) {
-        return reply.code(500).send({
-          id: service.id,
-          action,
-          ok: false,
-          error: `No ${action} command configured for ${service.name}`,
-        });
-      }
-
-      const commandArgs = command === "webui" ? [action] : [];
       const outputs: string[] = [];
-      if (action === "restart") {
-        const stopCommand = service.stopCommand;
-        const startCommand = service.startCommand;
-        if (!stopCommand || !startCommand) {
+      let executedCommand = "";
+      if (service.type === "compose") {
+        const composeAction = action === "start" ? "up" : action === "stop" ? "down" : "restart";
+        executedCommand = `docker compose -f ${service.composeFile} ${composeAction}`;
+        const args = composeAction === "up" ? ["up", "-d"] : [composeAction];
+        const result = await runCompose(service, args, ACTION_TIMEOUT_MS);
+        outputs.push(result.stdout, result.stderr);
+      } else {
+        const command = action === "start"
+          ? service.startCommand
+          : action === "stop"
+            ? service.stopCommand
+            : service.restartCommand;
+        if (!command) {
           return reply.code(500).send({
             id: service.id,
             action,
             ok: false,
-            error: `Restart commands are not configured for ${service.name}`,
+            error: `No ${action} command configured for ${service.name}`,
           });
         }
-        const stopped = await runOperatorCommand(
-          stopCommand,
-          stopCommand === "webui" ? ["stop"] : [],
-          ACTION_TIMEOUT_MS,
-        );
-        outputs.push(stopped.stdout, stopped.stderr);
-        const started = await runOperatorCommand(
-          startCommand,
-          startCommand === "webui" ? ["start"] : [],
-          ACTION_TIMEOUT_MS,
-        );
-        outputs.push(started.stdout, started.stderr);
-      } else {
-        const result = await runOperatorCommand(command, commandArgs, ACTION_TIMEOUT_MS);
+        executedCommand = command;
+        const result = await runCustomCommand(service, command, ACTION_TIMEOUT_MS);
         outputs.push(result.stdout, result.stderr);
       }
+      await recordServiceRun(service.id, action, executedCommand, true, outputs.join(""));
 
       await recordActivity({
         kind: action,
@@ -392,6 +406,15 @@ app.post(
       if (action === "stop") setIntentionalStop(service.id, false);
       req.log.error(err);
       const detail = err as { stderr?: string; message: string };
+      await recordServiceRun(
+        service.id,
+        action,
+        service.type === "compose"
+          ? `docker compose -f ${service.composeFile} ${action}`
+          : service[`${action}Command` as "startCommand" | "stopCommand" | "restartCommand"] ?? "",
+        false,
+        (detail.stderr || detail.message).trim(),
+      ).catch(() => undefined);
       return reply
         .code(500)
         .send({ id: service.id, action, ok: false, error: (detail.stderr || detail.message).trim() });
@@ -408,15 +431,22 @@ app.get(
     },
   },
   async (req, reply) => {
-    const service = loadServices().find((entry) => entry.id === req.params.id);
-    if (!service) return reply.code(404).send({ error: `Unknown service "${req.params.id}"` });
+    const service = loadServices().find((entry) => entry.id === requestParams(req).id);
+    if (!service) return reply.code(404).send({ error: `Unknown service "${requestParams(req).id}"` });
 
-    const tail = parseTail(req.query.tail);
+    const tail = parseTail(requestQuery(req).tail);
     if (tail === null) {
       return reply.code(400).send({ error: `tail must be an integer from 1 to ${MAX_TAIL}` });
     }
 
     try {
+      if (service.type === "custom") {
+        if (!service.logsCommand) {
+          return reply.code(500).send({ error: `No logs command configured for ${service.name}` });
+        }
+        const { stdout, stderr } = await runCustomCommand(service, service.logsCommand, LOGS_TIMEOUT_MS);
+        return { id: service.id, tail, lines: parseLogText(stdout + stderr) };
+      }
       const { stdout, stderr } = await runCompose(
         service,
         ["logs", "--no-color", "--no-log-prefix", "--timestamps", "--tail", String(tail)],
@@ -442,12 +472,22 @@ app.get(
     },
   },
   async (req, reply) => {
-    const service = loadServices().find((entry) => entry.id === req.params.id);
-    if (!service) return reply.code(404).send({ error: `Unknown service "${req.params.id}"` });
+    const service = loadServices().find((entry) => entry.id === requestParams(req).id);
+    if (!service) return reply.code(404).send({ error: `Unknown service "${requestParams(req).id}"` });
 
-    const tail = parseTail(req.query.tail);
+    const tail = parseTail(requestQuery(req).tail);
     if (tail === null) {
       return reply.code(400).send({ error: `tail must be an integer from 1 to ${MAX_TAIL}` });
+    }
+    if (service.type === "custom") {
+      if (!service.logsCommand) return reply.code(500).send({ error: `No logs command configured for ${service.name}` });
+      try {
+        const { stdout, stderr } = await runCustomCommand(service, service.logsCommand, LOGS_TIMEOUT_MS);
+        return { id: service.id, tail, lines: parseLogText(stdout + stderr) };
+      } catch (err) {
+        const detail = err as { stderr?: string; message: string };
+        return reply.code(500).send({ error: (detail.stderr || detail.message).trim() });
+      }
     }
 
     reply.hijack();
@@ -464,6 +504,8 @@ app.get(
       "docker",
       [
         "compose",
+        "-f",
+        service.composeFile,
         "logs",
         "--no-color",
         "--no-log-prefix",
@@ -571,10 +613,10 @@ app.post(
     if (!isJenkinsConfigured()) {
       return reply.code(400).send({ error: "Jenkins is not configured" });
     }
-    if (!req.params.job) return reply.code(400).send({ error: "Job is required" });
+    if (!requestParams(req).job) return reply.code(400).send({ error: "Job is required" });
 
     try {
-      await triggerJenkinsBuild(req.params.job);
+      await triggerJenkinsBuild(requestParams(req).job);
       return { ok: true };
     } catch (err) {
       req.log.error(err);
@@ -596,17 +638,17 @@ app.get(
   async (req, reply) => {
     if (!isJenkinsConfigured()) return { configured: false, lines: [] };
 
-    const num = Number(req.params.num);
+    const num = Number(requestParams(req).num);
     if (!Number.isInteger(num) || num < 1) {
       return reply.code(400).send({ error: "Build number must be a positive integer" });
     }
-    const tail = parseTail(req.query.tail);
+    const tail = parseTail(requestQuery(req).tail);
     if (tail === null) {
       return reply.code(400).send({ error: `tail must be an integer from 1 to ${MAX_TAIL}` });
     }
 
     try {
-      return { configured: true, lines: await jenkinsConsole(req.params.job, num, tail) };
+      return { configured: true, lines: await jenkinsConsole(requestParams(req).job, num, tail) };
     } catch (err) {
       req.log.error(err);
       return reply.code(502).send({
@@ -646,9 +688,9 @@ app.get(
     },
   },
   async (req, reply) => {
-    if (!isSonarConfigured()) return { configured: false, key: req.params.key };
+    if (!isSonarConfigured()) return { configured: false, key: requestParams(req).key };
     try {
-      return { configured: true, ...(await sonarProject(req.params.key)) };
+      return { configured: true, ...(await sonarProject(requestParams(req).key)) };
     } catch (err) {
       req.log.error(err);
       return reply.code(502).send({
@@ -700,7 +742,7 @@ app.post(
   },
   async (req, reply) => {
     try {
-      await ollamaLoadModel(req.params.name);
+      await ollamaLoadModel(requestParams(req).name);
       return { ok: true };
     } catch (err) {
       req.log.error(err);
@@ -721,7 +763,7 @@ app.post(
   },
   async (req, reply) => {
     try {
-      await ollamaUnloadModel(req.params.name);
+      await ollamaUnloadModel(requestParams(req).name);
       return { ok: true };
     } catch (err) {
       req.log.error(err);
@@ -742,7 +784,7 @@ app.get(
     },
   },
   async (req, reply) => {
-    const raw = req.query.limit;
+    const raw = requestQuery(req).limit;
     const limit = raw === undefined ? 50 : Number(raw);
 
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
@@ -770,10 +812,11 @@ app.post(
     config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
   },
   async (req, reply) => {
-    const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+    const body = requestBody(req);
+    const message = typeof body.message === "string" ? body.message.trim() : "";
     const model =
-      typeof req.body?.model === "string" && req.body.model.trim()
-        ? req.body.model.trim()
+      typeof body.model === "string" && body.model.trim()
+        ? body.model.trim()
         : "gpt-oss:20b";
 
     if (!message) return reply.code(400).send({ error: "Message is required" });
@@ -861,7 +904,7 @@ app.put(
   },
   async (req, reply) => {
     try {
-      return publicSettings(await updateSettings(req.body));
+      return publicSettings(await updateSettings(requestBody(req)));
     } catch (err) {
       req.log.error(err);
       return reply.code(503).send({ error: "settings_unavailable" });
@@ -879,7 +922,7 @@ app.get(
     },
   },
   async (req, reply) => {
-    const raw = req.query.limit;
+    const raw = requestQuery(req).limit;
     const limit = raw === undefined ? 50 : Number(raw);
 
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
@@ -915,14 +958,14 @@ app.post<{ Params: { id: string } }>(
     },
   },
   async (req, reply) => {
-    const id = Number(req.params.id);
+    const id = Number(requestParams(req).id);
     if (!Number.isInteger(id) || id < 1) {
       return reply.code(400).send({ error: "Invalid alert id" });
     }
 
     try {
       const updated = await markAlertRead(id);
-      if (!updated) return reply.code(404).send({ error: `Unknown alert "${req.params.id}"` });
+      if (!updated) return reply.code(404).send({ error: `Unknown alert "${requestParams(req).id}"` });
       return { ok: true };
     } catch (err) {
       req.log.error(err);
@@ -978,42 +1021,43 @@ app.post(
         id: z.string().optional(),
         name: z.string().min(1),
         desc: z.string().optional(),
-        image: z.string().url().optional(),
+        description: z.string().optional(),
         folder: z.string().min(1),
+        type: z.enum(["compose", "custom"]).optional(),
+        composeFile: z.string().optional(),
         port: z.number().int().min(1).max(65535),
         url: z.string().url(),
-        healthPath: z.string().trim().regex(/^\//, "Health path must start with /").max(512),
+        healthUrl: z.string().url().optional(),
+        healthPath: z.string().trim().regex(/^\//).max(512).optional(),
         icon: z.string().optional(),
-        startCommand: z.enum([
-          "jenkins-start",
-          "jenkins-stop",
-          "sonar-start",
-          "sonar-stop",
-          "mongo-start",
-          "mongo-stop",
-          "webui",
-        ]).optional(),
-        stopCommand: z.enum([
-          "jenkins-start",
-          "jenkins-stop",
-          "sonar-start",
-          "sonar-stop",
-          "mongo-start",
-          "mongo-stop",
-          "webui",
-        ]).optional(),
+        startCmd: z.string().optional(),
+        stopCmd: z.string().optional(),
+        restartCmd: z.string().optional(),
+        logsCmd: z.string().optional(),
       }).strict(),
     },
     config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
   },
   async (req, reply) => {
     try {
-      return reply.code(201).send(await createService(req.body));
+      return reply.code(201).send(await createService(requestBody(req)));
     } catch (err) {
       return sendRegistryError(reply, err);
     }
   },
 );
+
+app.put("/api/registry/services/reorder", {
+  schema: { body: z.object({ ids: z.array(z.string()).min(1) }).strict() },
+}, async (req, reply) => {
+  try {
+    const ids = requestBody(req).ids;
+    await reorderServices(Array.isArray(ids) && ids.every((id): id is string => typeof id === "string") ? ids : []);
+    return { ok: true };
+  } catch (err) {
+    return sendRegistryError(reply, err);
+  }
+});
 
 app.put("/api/registry/services/:id", {
   schema: {
@@ -1022,40 +1066,59 @@ app.put("/api/registry/services/:id", {
       id: z.string().optional(),
       name: z.string().min(1),
       desc: z.string().optional(),
-      image: z.string().url().optional(),
+      description: z.string().optional(),
       folder: z.string().min(1),
+      type: z.enum(["compose", "custom"]).optional(),
+      composeFile: z.string().optional(),
       port: z.number().int().min(1).max(65535),
       url: z.string().url(),
-      healthPath: z.string().trim().regex(/^\//, "Health path must start with /").max(512),
+      healthUrl: z.string().url().optional(),
+      healthPath: z.string().trim().regex(/^\//).max(512).optional(),
       icon: z.string().optional(),
-      startCommand: z.enum([
-        "jenkins-start",
-        "jenkins-stop",
-        "sonar-start",
-        "sonar-stop",
-        "mongo-start",
-        "mongo-stop",
-        "webui",
-      ]).optional(),
-      stopCommand: z.enum([
-        "jenkins-start",
-        "jenkins-stop",
-        "sonar-start",
-        "sonar-stop",
-        "mongo-start",
-        "mongo-stop",
-        "webui",
-      ]).optional(),
+      startCmd: z.string().optional(),
+      stopCmd: z.string().optional(),
+      restartCmd: z.string().optional(),
+      logsCmd: z.string().optional(),
     }).strict(),
   },
   config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
 }, async (req, reply) => {
   try {
-    return await updateService(req.params.id, req.body);
+    return await updateService(requestParams(req).id, requestBody(req));
   } catch (err) {
     return sendRegistryError(reply, err);
   }
 });
+
+app.post(
+  "/api/registry/services/test",
+  {
+    schema: {
+      body: z.object({
+        name: z.string().min(1),
+        folder: z.string().min(1),
+        type: z.enum(["compose", "custom"]).optional(),
+        composeFile: z.string().optional(),
+        port: z.number().int().min(1).max(65535),
+        url: z.string().url(),
+        healthUrl: z.string().url().optional(),
+        healthPath: z.string().regex(/^\//).optional(),
+        icon: z.string().optional(),
+        startCmd: z.string().optional(),
+        stopCmd: z.string().optional(),
+        restartCmd: z.string().optional(),
+        logsCmd: z.string().optional(),
+      }).strict(),
+    },
+  },
+  async (req, reply) => {
+    try {
+      return await testService(requestBody(req));
+    } catch (err) {
+      return sendRegistryError(reply, err);
+    }
+  },
+);
 
 app.delete("/api/registry/services/:id", {
   schema: {
@@ -1063,7 +1126,7 @@ app.delete("/api/registry/services/:id", {
   },
 }, async (req, reply) => {
   try {
-    await deleteService(req.params.id);
+    await deleteService(requestParams(req).id);
     return { ok: true };
   } catch (err) {
     return sendRegistryError(reply, err);
@@ -1106,7 +1169,7 @@ app.post("/api/docker/backups/:serviceId", {
   },
 }, async (req, reply) => {
   try {
-    return reply.code(201).send(await createImageBackup(req.params.serviceId));
+    return reply.code(201).send(await createImageBackup(requestParams(req).serviceId));
   } catch (err) {
     return sendHousekeepingError(reply, err);
   }
@@ -1119,7 +1182,7 @@ app.post("/api/docker/backups/:serviceId/restore", {
   },
 }, async (req, reply) => {
   try {
-    return await restoreImageBackup(req.params.serviceId, req.body?.name);
+    return await restoreImageBackup(requestParams(req).serviceId, requestBody(req)?.name);
   } catch (err) {
     return sendHousekeepingError(reply, err);
   }
@@ -1160,7 +1223,7 @@ app.get("/api/metrics", {
     querystring: z.object({ range: z.string().optional() }).strict(),
   },
 }, async (req, reply) => {
-  const range = parseMetricsRange(req.query.range);
+  const range = parseMetricsRange(requestQuery(req).range);
   try {
     return await readMetricsRange(range);
   } catch (err) {
@@ -1185,7 +1248,7 @@ app.get("/api/incidents", {
     querystring: z.object({ limit: z.string().optional() }).strict(),
   },
 }, async (req, reply) => {
-  const raw = req.query.limit;
+  const raw = requestQuery(req).limit;
   const limit = raw === undefined ? 50 : Number(raw);
 
   if (!Number.isInteger(limit) || limit < 1 || limit > 200) {

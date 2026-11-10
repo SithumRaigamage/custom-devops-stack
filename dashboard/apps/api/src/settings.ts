@@ -1,6 +1,5 @@
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { homedir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { pool } from "./db.js";
 
@@ -88,15 +87,12 @@ export type SettingsUpdate = z.infer<typeof SettingsUpdateSchema>;
 
 export const SETTINGS_KEY = "app";
 
-/** The stack root defaults to the folder that contains the dashboard and services.yaml. */
+/** The stack root defaults to the repository root containing the dashboard. */
 function defaultStackRoot(): string {
   const configured = process.env.STACK_ROOT?.trim();
   if (configured && configured !== ".") return resolve(expandHome(configured));
 
-  const servicesFile =
-    process.env.SERVICES_FILE ??
-    fileURLToPath(new URL("../../../services.yaml", import.meta.url));
-  return dirname(dirname(servicesFile));
+  return resolve(new URL("../../../", import.meta.url).pathname);
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {

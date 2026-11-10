@@ -189,7 +189,7 @@ function composeImageNames(service: Service): string[] {
   }
 }
 
-/** Prefer the image a container is actually using, then services.yaml, then compose. */
+/** Prefer the image a container is actually using, then the database, then compose. */
 async function resolveServiceImage(service: Service): Promise<string | null> {
   try {
     const byProject = await listContainersByProject();

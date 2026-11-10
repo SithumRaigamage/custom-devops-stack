@@ -570,8 +570,15 @@ export interface RegistryService {
   health: string;
   port?: number;
   icon?: string;
-  startCommand?: string;
-  stopCommand?: string;
+  type: "compose" | "custom";
+  workingDir: string;
+  description: string;
+  healthUrl: string;
+  startCmd?: string;
+  stopCmd?: string;
+  restartCmd?: string;
+  logsCmd?: string;
+  sortOrder: number;
 }
 
 export interface RegistryFolder {
@@ -588,10 +595,15 @@ export interface ServiceInput {
   composeFile?: string;
   port: number;
   url: string;
-  healthPath: string;
+  healthPath?: string;
+  healthUrl?: string;
   icon?: string;
-  startCommand?: string;
-  stopCommand?: string;
+  description?: string;
+  type?: "compose" | "custom";
+  startCmd?: string;
+  stopCmd?: string;
+  restartCmd?: string;
+  logsCmd?: string;
 }
 
 export async function fetchRegistryServices(
@@ -628,6 +640,24 @@ export async function updateRegistryService(
 export async function deleteRegistryService(id: string): Promise<void> {
   await requestJSON(`/registry/services/${encodeURIComponent(id)}`, {
     method: "DELETE",
+  });
+}
+
+export async function testRegistryService(input: ServiceInput): Promise<{
+  folder: boolean;
+  composeFile: boolean;
+  health: boolean;
+}> {
+  return requestJSON("/registry/services/test", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function reorderRegistryServices(ids: string[]): Promise<void> {
+  await requestJSON("/registry/services/reorder", {
+    method: "PUT",
+    body: JSON.stringify({ ids }),
   });
 }
 

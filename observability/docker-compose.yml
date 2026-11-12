@@ -112,6 +112,7 @@ networks:
   observability:
     name: observability
   # Shared with Jenkins/SonarQube so Prometheus can scrape them by container name.
+  # Declared like in jenkins/ and sonarqube/, so whichever starts first creates it.
   devops-network:
     name: devops-network
-    external: true
+    driver: bridge

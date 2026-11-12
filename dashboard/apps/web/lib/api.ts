@@ -458,14 +458,10 @@ export interface NotificationPreferences {
   rules: AlertRuleToggles;
   /** Write-only: the server returns an empty string and a configured flag. */
   discordWebhookUrl: string;
-  /** Write-only: the server returns an empty string and a configured flag. */
-  telegramBotToken: string;
-  telegramChatId: string;
 }
 
 export interface NotificationChannels {
   discord: boolean;
-  telegram: boolean;
 }
 
 export interface AppSettings {
@@ -536,7 +532,6 @@ export async function markAllAlertsRead(): Promise<void> {
 
 export async function sendTestNotification(): Promise<{
   discord: ChannelResult;
-  telegram: ChannelResult;
 }> {
   return requestJSON("/notifications/test", { method: "POST" });
 }

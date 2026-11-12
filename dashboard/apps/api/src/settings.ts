@@ -30,8 +30,6 @@ const NotificationsSchema = z.object({
     .refine((value) => value === "" || /^https?:\/\//i.test(value), {
       message: "Discord webhook must be an http(s) URL",
     }),
-  telegramBotToken: z.string().trim().max(512),
-  telegramChatId: z.string().trim().max(128),
 });
 
 export type NotificationPreferences = z.infer<typeof NotificationsSchema>;
@@ -64,8 +62,6 @@ const NotificationsUpdateSchema = z
         message: "Discord webhook must be an http(s) URL",
       })
       .optional(),
-    telegramBotToken: z.string().trim().max(512).optional(),
-    telegramChatId: z.string().trim().max(128).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "No notification settings provided",
@@ -112,8 +108,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
       ollamaUnreachable: true,
     },
     discordWebhookUrl: "",
-    telegramBotToken: "",
-    telegramChatId: "",
   },
 };
 
@@ -123,11 +117,10 @@ export function resolveStackRoot(settings: AppSettings): string {
 
 /** Shape returned to clients: channel secrets are replaced by flags. */
 export interface PublicSettings extends Omit<AppSettings, "notifications"> {
-  notifications: Omit<NotificationPreferences, "discordWebhookUrl" | "telegramBotToken"> & {
+  notifications: Omit<NotificationPreferences, "discordWebhookUrl"> & {
     discordWebhookUrl: "";
-    telegramBotToken: "";
   };
-  channels: { discord: boolean; telegram: boolean };
+  channels: { discord: boolean };
 }
 
 export function publicSettings(settings: AppSettings): PublicSettings {
@@ -136,13 +129,9 @@ export function publicSettings(settings: AppSettings): PublicSettings {
     notifications: {
       ...settings.notifications,
       discordWebhookUrl: "",
-      telegramBotToken: "",
     },
     channels: {
       discord: settings.notifications.discordWebhookUrl.trim() !== "",
-      telegram:
-        settings.notifications.telegramBotToken.trim() !== "" &&
-        settings.notifications.telegramChatId.trim() !== "",
     },
   };
 }

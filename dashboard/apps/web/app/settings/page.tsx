@@ -260,7 +260,7 @@ export default function SettingsPage() {
   const [draggedServiceId, setDraggedServiceId] = useState<string | null>(null);
 
   const [form, setForm] = useState<SettingsForm | null>(null);
-  const [dirtyChannels, setDirtyChannels] = useState({ discord: false, telegram: false });
+  const [dirtyChannels, setDirtyChannels] = useState({ discord: false });
   const [testPending, setTestPending] = useState(false);
   const [editor, setEditor] = useState<
     { mode: "add" } | { mode: "edit"; service: RegistryService } | null
@@ -298,10 +298,10 @@ export default function SettingsPage() {
     );
   }
 
-  function setSecret(field: "discordWebhookUrl" | "telegramBotToken", value: string) {
+  function setSecret(field: "discordWebhookUrl", value: string) {
     setDirtyChannels((current) => ({
       ...current,
-      [field === "discordWebhookUrl" ? "discord" : "telegram"]: true,
+      discord: true,
     }));
     setForm((current) =>
       current
@@ -319,13 +319,11 @@ export default function SettingsPage() {
       confirmStopAll: form.notifications.confirmStopAll,
       autoRefresh: form.notifications.autoRefresh,
       rules: form.notifications.rules,
-      telegramChatId: form.notifications.telegramChatId,
     };
 
     // Secrets are write-only: send them only when the user edited the field, so an
     // unrelated save never clears a stored webhook or token.
     if (dirtyChannels.discord) notifications.discordWebhookUrl = form.notifications.discordWebhookUrl;
-    if (dirtyChannels.telegram) notifications.telegramBotToken = form.notifications.telegramBotToken;
 
     try {
       await saveMutation.mutateAsync({
@@ -333,7 +331,7 @@ export default function SettingsPage() {
         healthCheckIntervalSeconds: form.healthCheckIntervalSeconds,
         notifications,
       });
-      setDirtyChannels({ discord: false, telegram: false });
+      setDirtyChannels({ discord: false });
       setForm((current) =>
         current
           ? {
@@ -341,7 +339,6 @@ export default function SettingsPage() {
               notifications: {
                 ...current.notifications,
                 discordWebhookUrl: "",
-                telegramBotToken: "",
               },
             }
           : current,
@@ -356,12 +353,12 @@ export default function SettingsPage() {
     setTestPending(true);
     try {
       const result = await sendTestNotification();
-      if (result.discord === "not_configured" && result.telegram === "not_configured") {
-        toast("Add a Discord webhook or a Telegram token and chat id first.", "error");
+      if (result.discord === "not_configured") {
+        toast("Add a Discord webhook first.", "error");
       } else {
-        const anySent = result.discord === "sent" || result.telegram === "sent";
+        const anySent = result.discord === "sent";
         toast(
-          `Test — Discord: ${channelLabel(result.discord)} · Telegram: ${channelLabel(result.telegram)}`,
+          `Test — Discord: ${channelLabel(result.discord)}`,
           anySent ? "success" : "error",
         );
       }
@@ -531,7 +528,7 @@ export default function SettingsPage() {
               <div className="flex flex-col gap-1">
                 <h2 className="m-0 text-base font-bold text-foreground">Delivery channels</h2>
                 <p className="m-0 text-xs text-muted-foreground">
-                  Optional push to Discord and Telegram. Secrets stay on the API and are never
+                  Optional push to Discord. Secrets stay on the API and are never
                   sent back to this page.
                 </p>
               </div>
@@ -561,7 +558,7 @@ export default function SettingsPage() {
                 onChange={(event) => setSecret("discordWebhookUrl", event.target.value)}
                 placeholder={
                   settings.channels.discord
-                    ? "Saved — leave blank to keep"
+                    ? "•••••••••••••••• saved — type to replace"
                     : "https://discord.com/api/webhooks/…"
                 }
                 className={`${INPUT_CLASS} font-mono text-[13px]`}
@@ -571,51 +568,6 @@ export default function SettingsPage() {
               </span>
             </label>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className={LABEL_CLASS}>
-                <span className="flex flex-wrap items-center gap-2">
-                  Telegram bot token
-                  {settings.channels.telegram && (
-                    <span className="rounded-full bg-ok-bg px-2 py-0.5 text-[11px] font-semibold text-ok">
-                      Configured
-                    </span>
-                  )}
-                </span>
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={form.notifications.telegramBotToken}
-                  onChange={(event) => setSecret("telegramBotToken", event.target.value)}
-                  placeholder={
-                    settings.channels.telegram ? "Saved — leave blank to keep" : "123456:ABC…"
-                  }
-                  className={`${INPUT_CLASS} font-mono text-[13px]`}
-                />
-              </label>
-
-              <label className={LABEL_CLASS}>
-                Telegram chat id
-                <input
-                  type="text"
-                  value={form.notifications.telegramChatId}
-                  onChange={(event) =>
-                    setForm((current) =>
-                      current
-                        ? {
-                            ...current,
-                            notifications: {
-                              ...current.notifications,
-                              telegramChatId: event.target.value,
-                            },
-                          }
-                        : current,
-                    )
-                  }
-                  placeholder="-1001234567890"
-                  className={`${INPUT_CLASS} font-mono text-[13px]`}
-                />
-              </label>
-            </div>
             <p className="m-0 text-xs text-muted-foreground">
               “Send test” uses the saved channels, so save first.
             </p>

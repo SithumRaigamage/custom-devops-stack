@@ -206,24 +206,121 @@ async function activeAlerts(rule: string): Promise<ActiveAlert[]> {
 
 const CHANNEL_TIMEOUT_MS = 5000;
 
-async function postDiscord(webhookUrl: string, text: string): Promise<void> {
+interface DiscordEmbed {
+  author?: { name: string };
+  title: string;
+  description?: string;
+  color: number;
+  url?: string;
+  fields?: { name: string; value: string; inline?: boolean }[];
+  timestamp: string;
+  footer: { text: string };
+}
+
+const DISCORD_COLORS: Record<AlertSeverity, number> = {
+  bad: 0xe5484d,
+  warn: 0xf5a524,
+  info: 0x3e9fe5,
+};
+
+interface RuleFlavor {
+  icon: string;
+  headline: string;
+  quips: string[];
+  nextStep: string;
+}
+
+/** Each rule gets its own personality so alerts are recognisable at a glance. */
+const RULE_FLAVOR: Record<string, RuleFlavor> = {
+  service_stopped: {
+    icon: "🪦",
+    headline: "Flatlined",
+    quips: [
+      "Went quiet without saying goodbye.",
+      "Pulled the plug on itself.",
+      "Not answering the door anymore.",
+    ],
+    nextStep: "Open the dashboard and hit Start, or check its logs for a crash.",
+  },
+  service_unhealthy: {
+    icon: "🤒",
+    headline: "Feeling unwell",
+    quips: [
+      "Running, but clearly not okay.",
+      "Still up, but failing its health checks.",
+      "Coughing and refusing to say why.",
+    ],
+    nextStep: "Peek at the logs, then restart if it doesn't recover.",
+  },
+  jenkins_failed: {
+    icon: "🧯",
+    headline: "Build on fire",
+    quips: [
+      "The pipeline tripped over its own shoelaces.",
+      "Red build. Somebody's commit has opinions.",
+      "Jenkins would like a word.",
+    ],
+    nextStep: "Check the console output of the failed run.",
+  },
+  sonar_gate_failed: {
+    icon: "🚧",
+    headline: "Quality gate says no",
+    quips: [
+      "Code smells detected. Gate stays shut.",
+      "SonarQube is not impressed.",
+      "Shipping blocked until the code cleans up.",
+    ],
+    nextStep: "Review the new issues in SonarQube.",
+  },
+  ollama_unreachable: {
+    icon: "🦙",
+    headline: "Llama went missing",
+    quips: [
+      "The local model stopped responding.",
+      "Ollama wandered off. The assistant is on its own.",
+      "No llama, no answers.",
+    ],
+    nextStep: "Make sure `ollama serve` is running.",
+  },
+};
+
+const FALLBACK_FLAVOR: RuleFlavor = {
+  icon: "📡",
+  headline: "Heads up",
+  quips: ["Something needs your attention."],
+  nextStep: "Open the dashboard for details.",
+};
+
+function alertEmbed(alert: Alert): DiscordEmbed {
+  const flavor = RULE_FLAVOR[alert.rule] ?? FALLBACK_FLAVOR;
+  const quip = flavor.quips[alert.id % flavor.quips.length];
+  const when = Math.floor(alert.ts / 1000);
+
+  return {
+    author: { name: "StackPilot · Mission Control" },
+    title: `${flavor.icon}  ${flavor.headline}`,
+    description: `**${alert.message}**\n*${quip}*`,
+    color: DISCORD_COLORS[alert.severity] ?? DISCORD_COLORS.info,
+    // Only absolute links are valid for Discord; in-app paths like /services are skipped.
+    ...(alert.link && /^https?:\/\//i.test(alert.link) ? { url: alert.link } : {}),
+    fields: [
+      ...(alert.serviceKey ? [{ name: "Service", value: `\`${alert.serviceKey}\``, inline: true }] : []),
+      { name: "Detected", value: `<t:${when}:R>`, inline: true },
+      { name: "Try this", value: flavor.nextStep },
+    ],
+    timestamp: new Date(alert.ts).toISOString(),
+    footer: { text: `Incident #${alert.id} · watching your stack 24/7` },
+  };
+}
+
+async function postDiscord(webhookUrl: string, embed: DiscordEmbed): Promise<void> {
   const res = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: text }),
+    body: JSON.stringify({ username: "StackPilot", embeds: [embed] }),
     signal: AbortSignal.timeout(CHANNEL_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`Discord responded ${res.status}`);
-}
-
-async function postTelegram(token: string, chatId: string, text: string): Promise<void> {
-  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
-    signal: AbortSignal.timeout(CHANNEL_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`Telegram responded ${res.status}`);
 }
 
 async function deliverToChannels(alert: Alert): Promise<void> {
@@ -234,13 +331,10 @@ async function deliverToChannels(alert: Alert): Promise<void> {
     return;
   }
 
-  const { discordWebhookUrl, telegramBotToken, telegramChatId } = settings.notifications;
+  const { discordWebhookUrl } = settings.notifications;
   await Promise.allSettled([
     discordWebhookUrl
-      ? postDiscord(discordWebhookUrl, `**StackPilot** · ${alert.message}`)
-      : Promise.resolve(),
-    telegramBotToken && telegramChatId
-      ? postTelegram(telegramBotToken, telegramChatId, `StackPilot · ${alert.message}`)
+      ? postDiscord(discordWebhookUrl, alertEmbed(alert))
       : Promise.resolve(),
   ]);
 }
@@ -248,31 +342,25 @@ async function deliverToChannels(alert: Alert): Promise<void> {
 /** Send a test message through every configured channel and report per channel. */
 export async function sendTestNotification(): Promise<{
   discord: ChannelResult;
-  telegram: ChannelResult;
 }> {
   const settings = await getSettings();
-  const text = "StackPilot test notification — alerts are wired up.";
+  const embed: DiscordEmbed = {
+    author: { name: "StackPilot · Mission Control" },
+    title: "📡  Signal received",
+    description: "**Loud and clear.** Real alerts will land right here.",
+    color: 0x30a46c,
+    timestamp: new Date().toISOString(),
+    footer: { text: "Test transmission · all systems nominal" },
+  };
 
-  const [discord, telegram] = await Promise.all([
-    settings.notifications.discordWebhookUrl
-      ? postDiscord(settings.notifications.discordWebhookUrl, text).then(
-          () => "sent" as const,
-          () => "failed" as const,
-        )
-      : Promise.resolve("not_configured" as const),
-    settings.notifications.telegramBotToken && settings.notifications.telegramChatId
-      ? postTelegram(
-          settings.notifications.telegramBotToken,
-          settings.notifications.telegramChatId,
-          text,
-        ).then(
-          () => "sent" as const,
-          () => "failed" as const,
-        )
-      : Promise.resolve("not_configured" as const),
-  ]);
+  const discord = await (settings.notifications.discordWebhookUrl
+    ? postDiscord(settings.notifications.discordWebhookUrl, embed).then(
+        () => "sent" as const,
+        () => "failed" as const,
+      )
+    : Promise.resolve("not_configured" as const));
 
-  return { discord, telegram };
+  return { discord };
 }
 
 // ---------------------------------------------------------------------------

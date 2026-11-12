@@ -112,7 +112,6 @@ const RATE_LIMIT = {
 // Secret patterns to redact from pino logs.
 const SECRET_PATTERNS = [
   /discordWebhookUrl/i,
-  /telegramBotToken/i,
   /JENKINS_API_TOKEN/i,
   /SONAR_TOKEN/i,
   /SESSION_SECRET/i,
@@ -181,8 +180,6 @@ const Schemas = {
           ollamaUnreachable: z.boolean().optional(),
         }).optional(),
         discordWebhookUrl: z.string().trim().max(2048).optional(),
-        telegramBotToken: z.string().trim().max(512).optional(),
-        telegramChatId: z.string().trim().max(128).optional(),
       }).refine((v) => Object.keys(v).length > 0 || Object.keys(v).length === 0, {
         message: "No notification settings provided",
       }),
@@ -933,8 +930,6 @@ app.put(
           discordWebhookUrl: z.string().trim().max(2048).refine((v) => v === "" || /^https?:\/\//i.test(v), {
             message: "Discord webhook must be an http(s) URL",
           }).optional(),
-          telegramBotToken: z.string().trim().max(512).optional(),
-          telegramChatId: z.string().trim().max(128).optional(),
         }).refine((v) => Object.keys(v).length > 0, {
           message: "No notification settings provided",
         }).optional(),
@@ -1018,9 +1013,9 @@ app.post<{ Params: { id: string } }>(
 app.post("/api/notifications/test", async (req, reply) => {
   try {
     const result = await sendTestNotification();
-    if (result.discord === "not_configured" && result.telegram === "not_configured") {
+    if (result.discord === "not_configured") {
       return reply.code(400).send({
-        error: "Configure a Discord webhook or a Telegram token and chat id first",
+        error: "Configure a Discord webhook first",
         ...result,
       });
     }

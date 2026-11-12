@@ -4,6 +4,11 @@ Notable changes to the stack. Newest first. Commit history has the details.
 
 ## 2026-11-12
 
+### New services
+- **Analytics (`analytics/`)**: Umami 3.2.0 on port 3004 for product analytics. Reuses the general Postgres (database `umami`, created by `analytics/scripts/init-db.sh` on `up`), so it adds no database container and is covered by `make backup`.
+- **Mailpit (`mailpit/`)**: v1.29.2, SMTP 1025 and inbox 8025, for testing app email (JobTrigger password reset, Jenkins notifications) without sending real mail.
+- Both: `127.0.0.1` only, memory limits, health checks, `devops-network`, in `scripts/stack.sh` (bootstrap, doctor, up/down) and `make scan-images`.
+
 ### Dashboard (StackPilot)
 - Audit log: every change through the dashboard or API is recorded (who, what, which service, ok/failed), never secret values. Settings → Audit log with filters, paging and CSV export.
 - API hardening: strict input validation on every route, rate limits on every change, log redaction, no CORS.

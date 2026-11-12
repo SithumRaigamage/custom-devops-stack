@@ -10,7 +10,7 @@
 #   scripts/stack.sh bootstrap             first-time setup (env files, images, dashboard deps)
 #   scripts/stack.sh list                  service names
 #
-# Services: jenkins sonarqube open-webui postgres mongodb dashboard-db
+# Services: jenkins sonarqube open-webui postgres mongodb dashboard-db analytics mailpit
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,6 +24,8 @@ SERVICES=(
   "postgres|postgres||5433"
   "mongodb|mongodb||27017"
   "dashboard-db|dashboard|postgres|5432"
+  "analytics|analytics||3004"
+  "mailpit|mailpit||1025 8025"
 )
 DEFAULT_UP=(dashboard-db jenkins sonarqube)
 
@@ -85,7 +87,7 @@ ensure_images() {
 
 ensure_env() { # copy .env.example → .env where a folder needs one
   local folder
-  for folder in sonarqube postgres observability; do
+  for folder in sonarqube postgres observability analytics mailpit; do
     if [ -f "$ROOT/$folder/.env.example" ] && [ ! -f "$ROOT/$folder/.env" ]; then
       # Fresh .env: replace every `change-me` placeholder with its own random secret.
       # Only for new files; an existing database keeps the password it was created with.
@@ -113,6 +115,9 @@ cmd_up() {
     filter="$(field "$svc" filter)"
     info "Starting $svc"
     if [ "$svc" = "open-webui" ]; then mkdir -p "$ROOT/open-webui/data"; fi
+    if [ "$svc" = "mailpit" ]; then mkdir -p "$ROOT/mailpit/data"; fi
+    # Umami keeps its data in the general Postgres: make sure its role and DB exist.
+    if [ "$svc" = "analytics" ]; then "$ROOT/analytics/scripts/init-db.sh"; fi
     # shellcheck disable=SC2086
     compose "$svc" up -d $filter
     ok "$svc started"
@@ -124,7 +129,7 @@ cmd_down() {
   local targets=("$@")
   if [ ${#targets[@]} -eq 0 ]; then
     # Stop in reverse dependency order; dashboard-db last so the UI sees the others stop.
-    targets=(open-webui sonarqube jenkins mongodb postgres dashboard-db)
+    targets=(analytics mailpit open-webui sonarqube jenkins mongodb postgres dashboard-db)
   fi
   local svc filter
   for svc in "${targets[@]}"; do
@@ -170,7 +175,7 @@ cmd_doctor() {
   command -v ollama >/dev/null 2>&1 && ok "ollama installed" || warn "ollama missing (assistant and Open WebUI need it)"
 
   local folder
-  for folder in sonarqube postgres; do
+  for folder in sonarqube postgres analytics; do
     if [ -f "$ROOT/$folder/.env" ]; then
       if grep -q 'change-me' "$ROOT/$folder/.env"; then warn "$folder/.env still contains 'change-me'"; failed=1
       else ok "$folder/.env present"; fi

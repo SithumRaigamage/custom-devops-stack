@@ -27,6 +27,8 @@ STACK_IMAGES=(
   "postgres:16-alpine"
   "mongo:7"
   "ghcr.io/open-webui/open-webui:main"
+  "ghcr.io/umami-software/umami:3.2.0"
+  "axllent/mailpit:v1.29.2"
 )
 
 scan_secrets() {

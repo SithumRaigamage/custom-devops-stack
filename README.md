@@ -20,6 +20,8 @@ custom-devops-stack/
 ├── postgres/        # General-purpose PostgreSQL
 ├── mongodb/         # MongoDB 7 in Docker
 ├── observability/   # Prometheus, Grafana, cAdvisor, Loki, Promtail
+├── analytics/       # Umami product analytics (data in postgres/)
+├── mailpit/         # Local mail catcher (SMTP 1025, inbox 8025)
 ├── images/          # Saved image tars for offline reload (git-ignored)
 ├── backups/         # Output of `make backup` (git-ignored)
 ├── reports/         # Output of `make scan` (git-ignored)
@@ -37,7 +39,7 @@ How to work here:
 7. Never commit secrets: real values go in gitignored `.env` files, with `.env.example` as the template. The pre-commit hooks (`pre-commit install`) block `.env` files and token-like strings.
 
 Everything `make` does is a thin wrapper around `scripts/*.sh`, so `scripts/stack.sh up jenkins` works without make.
-Services: `jenkins sonarqube open-webui postgres mongodb dashboard-db`. Jenkins and SonarQube now bind to
+Services: `jenkins sonarqube open-webui postgres mongodb dashboard-db analytics mailpit`. Jenkins and SonarQube now bind to
 127.0.0.1; set `JENKINS_BIND=0.0.0.0` or `SONAR_BIND=0.0.0.0` in their `.env` to reach them from other machines.
 
 ### Open WebUI shell command (`webui`)
@@ -83,6 +85,19 @@ Full table in `open-webui/README.md`.
 - **Data Location**: `../mongodb-macos-aarch64--8.2.3/data/db`
 - **Log**: `../mongodb-macos-aarch64--8.2.3/mongodb.log`
 - **Managed by**: `./script.sh` (`mongo-start` / `mongo-stop`) — not containerized, runs as a local process
+
+### 5. Analytics — Umami (`./analytics`)
+- **Purpose**: Cookie-free product analytics (page views, custom events) for lab projects, first JobTrigger
+- **Port**: 3004 (bound to `127.0.0.1`)
+- **Data Location**: database `umami` in the general Postgres (`postgres/`, port 5433); no data folder of its own
+- **Requires**: `postgres` running; `scripts/stack.sh up analytics` creates the role and database (`analytics/scripts/init-db.sh`)
+- **Documentation**: See `analytics/README.md`
+
+### 6. Mailpit (`./mailpit`)
+- **Purpose**: Local mail catcher. Apps send to SMTP 1025; messages appear in a web inbox and are never delivered
+- **Ports**: 1025 (SMTP), 8025 (inbox), both on `127.0.0.1`; `stack-mailpit:1025` from `devops-network`
+- **Data Location**: `./mailpit/data` (disposable, not backed up)
+- **Documentation**: See `mailpit/README.md`
 
 ## 🌐 Network Architecture
 
@@ -134,6 +149,8 @@ make down                      # stop every service
 | Open WebUI | http://localhost:3000 | Open WebUI account |
 | Grafana | http://localhost:3002 | `admin` + `GRAFANA_ADMIN_PASSWORD` set at first start (see `observability/README.md`) |
 | Prometheus | http://localhost:9090 | none (localhost only) |
+| Umami (analytics) | http://localhost:3004 | `admin` / `umami` on first login, change it |
+| Mailpit (email inbox) | http://localhost:8025 | none (localhost only) |
 
 All of these listen on 127.0.0.1 only.
 
@@ -226,6 +243,8 @@ All data is stored on your local machine:
 | PostgreSQL | Database files | `./sonarqube/postgresql` |
 | Open WebUI | Chats and settings | `./open-webui/data` |
 | Open WebUI | Image backup tar | `./open-webui/backup` |
+| Umami | Analytics events | database `umami` in `stack-postgres` (backed up with Postgres) |
+| Mailpit | Caught emails | `./mailpit/data` |
 | MongoDB | Database files | `../mongodb-macos-aarch64--8.2.3/data/db` |
 
 **Important**: Deleting Docker containers will NOT delete your data!

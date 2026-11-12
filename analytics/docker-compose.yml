@@ -1,0 +1,38 @@
+# Umami: privacy-friendly product analytics (page views and custom events) for the
+# projects in this lab. First user: JobTrigger (app + website, via server-side calls).
+# Its data lives in the general Postgres (postgres/, port 5433), database "umami",
+# so `make backup` already includes it (pg_dumpall of stack-postgres).
+#
+#   make up S="postgres analytics"     http://localhost:3004
+name: analytics
+
+services:
+  umami:
+    image: ghcr.io/umami-software/umami:3.2.0
+    container_name: stack-umami
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${UMAMI_DB_USER:-umami}:${UMAMI_DB_PASSWORD:?Set UMAMI_DB_PASSWORD in analytics/.env (run make bootstrap)}@${UMAMI_DB_HOST:-host.docker.internal}:${UMAMI_DB_PORT:-5433}/${UMAMI_DB_NAME:-umami}
+      APP_SECRET: ${UMAMI_APP_SECRET:?Set UMAMI_APP_SECRET in analytics/.env (run make bootstrap)}
+      DISABLE_TELEMETRY: "1"
+      TZ: ${TZ:-UTC}
+    ports:
+      - "${UMAMI_BIND:-127.0.0.1}:${UMAMI_PORT:-3004}:3000"
+    # Reaches stack-postgres through its published port on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/heartbeat >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [devops-network]
+    deploy:
+      resources:
+        limits: { memory: 512M, cpus: "0.5" }
+
+networks:
+  devops-network:
+    name: devops-network
+    driver: bridge

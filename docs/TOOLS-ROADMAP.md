@@ -26,6 +26,8 @@ Status key: **Installed** · **Planned** (priority picks) · **Idea** (not sched
 | StackPilot (`dashboard/`) | Stack dashboard, audit log | Installed | 3001, 4000, 5432 |
 | Prometheus, Grafana, cAdvisor, Loki, Promtail (`observability/`) | Metrics and logs | Installed | 9090, 3002, 8081, 3100 |
 | Gitleaks, Trivy (`make scan`, pre-commit, CI) | Security scanning | Installed | — |
+| Umami (`analytics/`) | Product analytics, data in `postgres/` | Installed | 3004 |
+| Mailpit (`mailpit/`) | Local mail catcher | Installed | 1025, 8025 |
 
 ## Recommended order
 
@@ -94,7 +96,8 @@ Nexus Repository, Harbor, JFrog Artifactory OSS, Docker Registry (`registry:2`),
 - Logs: Loki, Promtail, Grafana Alloy, ELK/OpenSearch, Graylog.
 - Tracing: Jaeger, Tempo, OpenTelemetry Collector.
 - Uptime: Uptime Kuma, Blackbox exporter.
-- Errors: Sentry (self-hosted), GlitchTip.
+- Errors: Sentry (self-hosted), GlitchTip (planned next for JobTrigger crash reports; Sentry-SDK compatible, can reuse `postgres/`).
+- Product analytics: Umami (installed), Plausible, PostHog (too heavy for this Mac).
 
 ### Infrastructure and platform
 Terraform / OpenTofu, Ansible, Packer, Pulumi, Vagrant, Multipass, Colima, kind, k3d, minikube, k3s, Portainer, Lazydocker, Dozzle.
@@ -145,11 +148,14 @@ All bound to 127.0.0.1 unless noted.
 | 3000 | Open WebUI |
 | 3001 | StackPilot dashboard (web) |
 | 3002 | Grafana |
+| 3004 | Umami (`analytics/`) |
 | 3100 | Loki |
 | 4000 | StackPilot API |
 | 5432 | StackPilot dashboard Postgres |
 | 5433 | General-purpose Postgres (`postgres/`) |
 | 8080, 50000 | Jenkins (`JENKINS_BIND` to expose) |
+| 1025 | Mailpit SMTP |
+| 8025 | Mailpit inbox |
 | 8081 | cAdvisor |
 | 9000 | SonarQube (`SONAR_BIND` to expose) |
 | 9090 | Prometheus |

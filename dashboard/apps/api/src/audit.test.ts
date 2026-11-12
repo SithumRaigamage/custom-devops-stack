@@ -35,6 +35,10 @@ test("settings changes list field names, never secret values", () => {
   assert.equal(message, "Changed settings: theme, notifications.discordWebhookUrl, rules.serviceStopped");
   assert.doesNotMatch(message, /SECRET/);
   assert.equal(describeSettingsChange({}), "nothing");
+  assert.equal(
+    rules["PUT /api/settings"]!(ctx({ ok: false, statusCode: 401 })).message,
+    "Settings change rejected (HTTP 401)",
+  );
 });
 
 test("login and password rules never include the password", () => {

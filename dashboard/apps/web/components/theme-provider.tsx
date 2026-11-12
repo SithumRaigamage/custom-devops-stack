@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -65,6 +66,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(DEFAULT_DARK ? "dark" : "light");
   const [hydrated, setHydrated] = useState(false);
   const [serverLoaded, setServerLoaded] = useState(false);
+  // Only a choice the user makes is saved; loading the stored/server value never is,
+  // so page loads (and the signed-out login page) don't write settings or audit entries.
+  const userChanged = useRef(false);
 
   const tokens = useMemo(
     () => buildTheme(themeByName(theme), mode === "dark"),
@@ -125,18 +129,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Persist theme and mode to the server after the first server read, so the
   // initial paint does not overwrite a stored preference.
   useEffect(() => {
-    if (!hydrated || !serverLoaded) return;
+    if (!hydrated || !serverLoaded || !userChanged.current) return;
+    userChanged.current = false;
     void saveSettings({ theme, mode }).catch(() => {
       // localStorage still keeps the choice for this browser.
     });
   }, [theme, mode, hydrated, serverLoaded]);
 
-  const setTheme = useCallback((name: string) => setThemeName(themeByName(name).n), []);
-  const setMode = useCallback((next: ThemeMode) => setModeState(next), []);
-  const toggleMode = useCallback(
-    () => setModeState((current) => (current === "dark" ? "light" : "dark")),
-    [],
-  );
+  const setTheme = useCallback((name: string) => {
+    userChanged.current = true;
+    setThemeName(themeByName(name).n);
+  }, []);
+  const setMode = useCallback((next: ThemeMode) => {
+    userChanged.current = true;
+    setModeState(next);
+  }, []);
+  const toggleMode = useCallback(() => {
+    userChanged.current = true;
+    setModeState((current) => (current === "dark" ? "light" : "dark"));
+  }, []);
 
   const value = useMemo<ThemeContextValue>(
     () => ({

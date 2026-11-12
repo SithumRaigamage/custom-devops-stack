@@ -98,7 +98,10 @@ export function createAuditRules(resolveName: NameResolver): Record<string, Audi
     // --- Settings, alerts, notifications ---
     "PUT /api/settings": (ctx) => ({
       kind: "settings.update",
-      message: failed(ctx, `Changed settings: ${describeSettingsChange(ctx.body)}`),
+      message:
+        !ctx.ok && Object.keys(ctx.body).length === 0
+          ? `Settings change rejected (HTTP ${ctx.statusCode})`
+          : failed(ctx, `Changed settings: ${describeSettingsChange(ctx.body)}`),
     }),
     "POST /api/alerts/read": (ctx) => ({
       kind: "alerts.read",

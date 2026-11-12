@@ -354,17 +354,8 @@ stack's local `mongod` defaults to 27018 instead.
 
 ## 📝 What's Next
 
-The live plan is in `docs/PRACTICES-ROADMAP.md` and `docs/TOOLS-ROADMAP.md`; changes are logged in `CHANGELOG.md`. Short list:
-
-- [ ] Rebuild Jenkins (gosu 1.19), pull fresh Postgres/Mongo/Open WebUI images, bump SonarQube, then `make scan` to compare
-- [ ] Install the Jenkins *Prometheus metrics* plugin so Prometheus collects Jenkins data
-- [ ] Test a restore from `make backup` into a scratch location
-- [ ] Schedule `make backup` (launchd) and copy backups off the Mac
-- [ ] Run `pnpm audit --audit-level high` in `dashboard/`
-- [ ] Jenkins Configuration as Code, its own SonarQube user and token
-- [ ] Docker log rotation and a free-memory check in `make doctor`
-- [ ] Add MongoDB authentication
-- [ ] Later: Nexus/Harbor registry, Traefik, Gitea, Vault, Terraform + k3d
+All remaining development is in **`backlog.md`** (P1 → P3). Finished work is logged in `CHANGELOG.md`.
+Top of the list: apply the image vulnerability fixes, bump SonarQube, test a restore, and run `pnpm audit` in `dashboard/`.
 
 ## 📚 Additional Resources
 

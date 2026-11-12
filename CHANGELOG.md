@@ -19,5 +19,11 @@ Notable changes to the stack. Newest first. Commit history has the details.
 - Jenkins image: gosu 1.17 → 1.19 (removes a critical Go CVE). Rebuild needed.
 - Observability: Prometheus, Grafana (provisioned "Stack containers" dashboard), cAdvisor v0.60.4, Loki, Promtail.
 
+### Dashboard services
+- Added **Observability** as a dashboard service (start/stop/logs/open Grafana).
+- Fixed the **Postgres** entry: it pointed at the dashboard's own database (5432) instead of the lab Postgres (5433).
+- `observability/` creates `devops-network` if missing, so it starts on its own.
+
 ### Docs
+- `backlog.md`: all remaining development, prioritised.
 - README quick start, monitoring, scanning and backup sections; port table; roadmap statuses; this changelog.

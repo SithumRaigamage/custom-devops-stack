@@ -42,6 +42,8 @@ services:
       # Docker Desktop only passes the socket through when the socket file itself is
       # mounted; mounting all of /var/run leaves cAdvisor unable to see any containers.
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # cAdvisor v0.54+ reads Docker containers through containerd (the "moby" namespace).
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro

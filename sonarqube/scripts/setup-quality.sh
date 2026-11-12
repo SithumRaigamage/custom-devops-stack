@@ -15,7 +15,7 @@ STRICT_LANGS="java,js,ts,py,go,php,cs,kotlin,ruby,scala"
 
 api() { # api <path> [curl --data-urlencode args...]; prints body, fails on HTTP error
   local path="$1"; shift
-  curl -sS -f -u "$SONAR_TOKEN:" -X POST "$HOST/api/$path" "$@"
+  curl -sS -f -u "$SONAR_TOKEN:" -X POST "$HOST/api/$path" "$@"  # gitleaks:allow (env var, not a literal)
 }
 get() { curl -sS -f -u "$SONAR_TOKEN:" -G "$HOST/api/$1" "${@:2}"; }
 

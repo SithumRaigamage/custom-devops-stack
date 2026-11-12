@@ -34,12 +34,12 @@ scan_secrets() {
   local report="$REPORTS/gitleaks.json"
   local rc=0
   if command -v gitleaks >/dev/null 2>&1; then
-    gitleaks git "$ROOT" --config "$ROOT/.gitleaks.toml" --redact \
+    gitleaks git "$ROOT" --config "$ROOT/.gitleaks.toml" --gitleaks-ignore-path "$ROOT/.gitleaksignore" --redact \
       --report-format json --report-path "$report" || rc=$?
   else
     # The repo is owned by a different uid inside the container, so mark it safe for git.
     docker run --rm -v "$ROOT:/repo:ro" -v "$REPORTS:/reports" --entrypoint sh "$GITLEAKS_IMAGE" -c \
-      'git config --global --add safe.directory /repo && gitleaks git /repo --config /repo/.gitleaks.toml --redact --report-format json --report-path /reports/gitleaks.json' \
+      'git config --global --add safe.directory /repo && gitleaks git /repo --config /repo/.gitleaks.toml --gitleaks-ignore-path /repo/.gitleaksignore --redact --report-format json --report-path /reports/gitleaks.json' \
       || rc=$?
   fi
   if [ $rc -eq 0 ]; then
@@ -73,7 +73,10 @@ scan_images() {
         --format table --output "/reports/trivy-$safe.txt" "$image" || rc=1
     fi
     if [ -s "$REPORTS/trivy-$safe.txt" ]; then
-      grep -E '^Total:' "$REPORTS/trivy-$safe.txt" | sed 's/^/   /' || true
+      # Trivy prints one "Total:" per target (OS packages, each jar, each lockfile); sum them.
+      grep -E '^Total:' "$REPORTS/trivy-$safe.txt" | awk '
+        { for (i = 1; i <= NF; i++) { if ($i == "(HIGH:") high += $(i+1); if ($i == "CRITICAL:") crit += $(i+1) } targets++ }
+        END { if (targets) printf "   %d CRITICAL, %d HIGH across %d targets\n", crit, high, targets }'
     fi
   done
   [ $rc -eq 0 ] && echo "✔ No fixable $SEVERITY vulnerabilities" \

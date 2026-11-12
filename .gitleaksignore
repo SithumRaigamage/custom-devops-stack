@@ -1,0 +1,4 @@
+# Reviewed false positives. Gitleaks skips these exact findings (fingerprint = commit:file:rule:line).
+# sonarqube/scripts/setup-quality.sh: `curl -u "$SONAR_TOKEN:"` passes an env variable, not a literal token.
+c3deeb12a4124352b4306c4789f9761ce3e701f3:sonarqube/scripts/setup-quality.sh:curl-auth-user:16
+a7923004881fb34b887a12278e4daae0db0f7c74:sonarqube/scripts/setup-quality.sh:curl-auth-user:16

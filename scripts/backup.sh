@@ -51,6 +51,9 @@ if [ "${1:-}" = "--restore-help" ]; then restore_help; exit 0; fi
 command -v docker >/dev/null 2>&1 || { echo "docker is not installed" >&2; exit 1; }
 docker info >/dev/null 2>&1 || { echo "Docker is not running" >&2; exit 1; }
 
+# macOS tar would otherwise add ._* metadata files and xattrs to every archive.
+export COPYFILE_DISABLE=1
+
 STAMP="$(date +%Y%m%d-%H%M%S)"
 DEST="$BACKUP_DIR/$STAMP"
 mkdir -p "$DEST"

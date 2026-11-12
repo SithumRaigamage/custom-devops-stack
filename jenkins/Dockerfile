@@ -33,7 +33,7 @@ RUN set -eux; \
 
 # gosu lets the entrypoint start as root just long enough to fix docker.sock
 # group access, then drop to the unprivileged jenkins user for the real process.
-ARG GOSU_VERSION=1.17
+ARG GOSU_VERSION=1.19
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
@@ -49,4 +49,3 @@ COPY docker-entrypoint-wrapper.sh /usr/local/bin/docker-entrypoint-wrapper.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint-wrapper.sh
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint-wrapper.sh"]
-

@@ -56,6 +56,8 @@ The entire stack never leaves your machine and is **not exposed to the internet*
 | `/api/registry/services/test-command` | POST | `{ folder, command, runInShell }`, runs the command in the same mode as a start/stop and returns its output |
 | `/api/registry/integrations/test` | POST | Test connection. Result is `connected`, `wrong_token`, `unreachable` or `error`, with the exact message |
 | `/api/registry/services/:id/credential` | DELETE | Remove the saved credential |
+| `/api/activity` | GET | `{ activity, nextCursor }`. Query: `limit` (≤500), `before` (cursor), `kind` (exact or `family.*`), `actor`, `service`, `source` (`audit`\|`event`), `outcome` (`ok`\|`failed`), `from`/`to` (epoch ms), `q` (message search) |
+| `/api/activity/facets` | GET | `{ kinds, actors, services }` for filter dropdowns |
 | `/api/jenkins/*`, `/api/sonar/*`, `/api/ollama/*` | GET/POST | Integration data. Take optional `?service=<id>`; default is the first service with that integration |
 
 ## Local development
@@ -73,7 +75,7 @@ cd apps/web
 pnpm dev          # runs next dev on http://localhost:3001
 ```
 
-The API refuses to start if `HOST` is not `127.0.0.1` or `localhost`. All cross‑origin requests from the dashboard are limited to `http://localhost:3001`.
+The API refuses to start if `HOST` is not `127.0.0.1` or `localhost`. There is no CORS: the browser reaches the API through the Next.js same-origin rewrite, and any mutating request with a foreign `Origin` is refused with 403.
 
 Docker is reached through the socket in `DOCKER_HOST`, else `~/.docker/run/docker.sock` (Docker Desktop on macOS), else `/var/run/docker.sock`. Containers are matched to services by the `com.docker.compose.project` label, which equals the service folder name.
 
@@ -115,6 +117,14 @@ Non-secret settings live on the `services` row (`integration_url`, `integration_
 **Test connection** returns one of: connected, wrong token (401/403, or SonarQube reporting the token invalid), unreachable (connection refused, timeout, host not found) or the exact error. All integration requests use a 5 s timeout, and `localhost` in a base URL is replaced with `127.0.0.1`, which avoids `fetch failed` caused by IPv6 `::1`. Panels show the real error message instead of a generic "can't reach".
 
 The Jenkins, SonarQube and Ollama clients read their settings from the service, not from `.env`. On first start after upgrading, `JENKINS_URL`/`JENKINS_USER`/`JENKINS_API_TOKEN`, `SONAR_URL`/`SONAR_TOKEN` and `OLLAMA_URL` from `.env` are imported once into the first service whose id or name contains `jenkins`, `sonar` or `ollama` (tracked by `integration_env_import:*` keys in `settings`). If no such service exists yet, the import is retried on the next start. The `.env` entries can then be removed.
+
+## Audit log
+
+Every state-changing request (service actions, registry edits, settings, credentials, backups, prune, Jenkins builds, Ollama load/unload, command tests, sign-in/out, password change) writes one `activity` row with `source = 'audit'`, the actor, the service id when there is one, and `outcome` `ok` or `failed`. Failed attempts are recorded too, including rejected sign-ins. Messages name the fields that changed, never their values, so webhook URLs, tokens and passwords are not stored.
+
+The rules live in `apps/api/src/audit-rules.ts` (one per `METHOD /route`); `audit.ts` attaches them as Fastify `preHandler`/`onResponse` hooks. Adding a mutating route means adding a rule there. Status changes seen by the background monitor are `source = 'event'`.
+
+**Settings → Audit log** (`/settings?tab=audit`) filters by source, action, actor, service, outcome, date range and text, pages with "Load more", and exports the loaded rows as CSV. Command output for start/stop/restart stays in `service_runs`.
 
 ## Data persistence
 

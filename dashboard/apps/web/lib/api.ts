@@ -49,6 +49,35 @@ export interface ActivityEntry {
   message: string;
   actor: string;
   serviceId: number | null;
+  /** Registry id of the service the entry is about, when there is one. */
+  serviceKey: string | null;
+  outcome: "ok" | "failed";
+  /** "audit" for user/API state changes, "event" for status changes seen by the monitor. */
+  source: "event" | "audit";
+}
+
+export interface ActivityFilter {
+  kind?: string;
+  actor?: string;
+  service?: string;
+  source?: "event" | "audit";
+  outcome?: "ok" | "failed";
+  /** Inclusive epoch-ms bounds. */
+  from?: number;
+  to?: number;
+  q?: string;
+}
+
+export interface ActivityPage {
+  activity: ActivityEntry[];
+  /** Pass as `before` to load the next (older) page; null when there is none. */
+  nextCursor: number | null;
+}
+
+export interface ActivityFacets {
+  kinds: string[];
+  actors: string[];
+  services: string[];
 }
 
 // Log types
@@ -332,11 +361,35 @@ export async function fetchActivity(
   limit = 50,
   signal?: AbortSignal,
 ): Promise<ActivityEntry[]> {
-  const body = await requestJSON<{ activity?: ActivityEntry[] }>(
-    `/activity?limit=${limit}`,
-    { signal },
-  );
-  return Array.isArray(body.activity) ? body.activity : [];
+  return (await fetchActivityPage({}, { limit }, signal)).activity;
+}
+
+/** One page of activity matching a filter, newest first. */
+export async function fetchActivityPage(
+  filter: ActivityFilter,
+  page: { limit?: number; before?: number } = {},
+  signal?: AbortSignal,
+): Promise<ActivityPage> {
+  const params = new URLSearchParams();
+  params.set("limit", String(page.limit ?? 50));
+  if (page.before !== undefined) params.set("before", String(page.before));
+  for (const [key, value] of Object.entries(filter)) {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  }
+  const body = await requestJSON<Partial<ActivityPage>>(`/activity?${params}`, { signal });
+  return {
+    activity: Array.isArray(body.activity) ? body.activity : [],
+    nextCursor: typeof body.nextCursor === "number" ? body.nextCursor : null,
+  };
+}
+
+export async function fetchActivityFacets(signal?: AbortSignal): Promise<ActivityFacets> {
+  const body = await requestJSON<Partial<ActivityFacets>>("/activity/facets", { signal });
+  return {
+    kinds: body.kinds ?? [],
+    actors: body.actors ?? [],
+    services: body.services ?? [],
+  };
 }
 
 // --- Auth ---

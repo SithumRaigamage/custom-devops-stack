@@ -13,8 +13,44 @@ const DOT: Record<string, string> = {
   build: "bg-info",
 };
 
-export function activityDot(kind: string): string {
+export function activityDot(kind: string, outcome?: "ok" | "failed"): string {
+  if (outcome === "failed") return "bg-bad";
+  if (kind === "service.delete" || kind === "credential.remove") return "bg-warn";
   return DOT[kind] ?? "bg-info";
+}
+
+/** Plain-language label for an activity kind, for filters and badges. */
+const KIND_LABEL: Record<string, string> = {
+  start: "Service started",
+  stop: "Service stopped",
+  restart: "Service restarted",
+  fail: "Action failed",
+  healthy: "Became healthy",
+  unhealthy: "Became unhealthy",
+  status: "Status change",
+  build: "Jenkins build",
+  "ollama.load": "Model loaded",
+  "ollama.unload": "Model unloaded",
+  "settings.update": "Settings changed",
+  "alerts.read": "Alerts read",
+  "notifications.test": "Test notification",
+  "service.create": "Service added",
+  "service.update": "Service edited",
+  "service.delete": "Service removed",
+  "service.reorder": "Services reordered",
+  "credential.remove": "Credential removed",
+  "command.test": "Command test run",
+  "backup.create": "Image backup",
+  "backup.restore": "Image restore",
+  "docker.prune": "Docker prune",
+  "auth.setup": "Account created",
+  "auth.login": "Sign-in",
+  "auth.logout": "Sign-out",
+  "auth.password": "Password changed",
+};
+
+export function activityKindLabel(kind: string): string {
+  return KIND_LABEL[kind] ?? kind;
 }
 
 export function isActivityKind(kind: string): kind is ActivityKind {

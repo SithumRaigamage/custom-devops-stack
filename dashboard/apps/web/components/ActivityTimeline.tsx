@@ -28,7 +28,7 @@ export function ActivityTimeline() {
                 <span
                   className={cn(
                     "mt-1 size-2.5 shrink-0 rounded-full shadow-[0_0_0_3px_var(--card)]",
-                    activityDot(item.kind),
+                    activityDot(item.kind, item.outcome),
                   )}
                 />
                 <span className="min-h-[22px] w-px flex-1 bg-border" />

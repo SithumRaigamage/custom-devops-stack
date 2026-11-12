@@ -165,6 +165,9 @@ export const activity = pgTable("activity", {
   service_id: integer("service_id").references(() => services.id),
   message: text("message").notNull(),
   actor: text("actor").notNull().default("user"),
+  service_key: text("service_key"),
+  outcome: text("outcome").notNull().default("ok"),
+  source: text("source").notNull().default("event"),
 });
 
 // metrics – time-series for CPU / memory per service

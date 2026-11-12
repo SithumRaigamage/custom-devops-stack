@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { AuditLog } from "@/components/AuditLog";
 import { PageHeader } from "@/components/PageHeader";
 import { useToast } from "@/components/toast";
 import { SERVICE_ICON_OPTIONS } from "@/lib/service-icons";
@@ -92,6 +93,12 @@ const ICON_OPTIONS = SERVICE_ICON_OPTIONS;
 const INPUT_CLASS =
   "h-11 w-full rounded-[10px] border border-border2 bg-field px-3.5 text-sm text-foreground";
 const LABEL_CLASS = "flex flex-col gap-2 text-[13px] font-semibold";
+
+type SettingsTab = "general" | "audit";
+const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
+  { id: "general", label: "General" },
+  { id: "audit", label: "Audit log" },
+];
 
 interface SettingsForm {
   stackRoot: string;
@@ -258,6 +265,21 @@ export default function SettingsPage() {
   const deleteMutation = useDeleteRegistryService();
   const reorderMutation = useReorderRegistryServices();
   const [draggedServiceId, setDraggedServiceId] = useState<string | null>(null);
+  const [tab, setTab] = useState<SettingsTab>("general");
+
+  // Deep link: /settings?tab=audit opens the Audit log.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    if (requested === "audit") setTab("audit");
+  }, []);
+
+  function selectTab(next: SettingsTab) {
+    setTab(next);
+    const url = new URL(window.location.href);
+    if (next === "general") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    window.history.replaceState(null, "", url);
+  }
 
   const [form, setForm] = useState<SettingsForm | null>(null);
   const [dirtyChannels, setDirtyChannels] = useState({ discord: false });
@@ -392,281 +414,314 @@ export default function SettingsPage() {
     <>
       <PageHeader title="Settings" sub="Where your stack lives and how often it is checked." />
 
-      {error ? (
-        <section className="max-w-[760px] rounded-[14px] border border-border bg-card p-6 text-sm text-muted-foreground">
-          Could not load settings. Is the API running?
-        </section>
-      ) : isPending || !form || !settings ? (
-        <section className="max-w-[760px] rounded-[14px] border border-border bg-card p-6 text-sm text-muted-foreground">
-          Loading settings…
-        </section>
+      <div
+        role="tablist"
+        aria-label="Settings sections"
+        className="mb-[22px] flex w-fit gap-1 rounded-[11px] border border-border bg-card p-1"
+      >
+        {SETTINGS_TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            id={`settings-tab-${item.id}`}
+            aria-selected={tab === item.id}
+            aria-controls={`settings-panel-${item.id}`}
+            onClick={() => selectTab(item.id)}
+            className={`h-8 rounded-[8px] px-3.5 text-[13px] font-semibold transition-colors ${
+              tab === item.id
+                ? "bg-brand text-brand-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "audit" ? (
+        <div role="tabpanel" id="settings-panel-audit" aria-labelledby="settings-tab-audit">
+          <AuditLog />
+        </div>
       ) : (
-        <form
-          onSubmit={handleSave}
-          aria-label="Settings"
-          className="flex max-w-[760px] flex-col gap-[22px] rounded-[14px] border border-border bg-card p-6"
-        >
-          <div className={LABEL_CLASS}>
-            <label htmlFor="root">Stack root folder</label>
-            <input
-              id="root"
-              type="text"
-              value={form.stackRoot}
-              onChange={(event) =>
-                setForm((current) =>
-                  current ? { ...current, stackRoot: event.target.value } : current,
-                )
-              }
-              className={`${INPUT_CLASS} font-mono text-[13px]`}
-            />
-            <span className="text-xs font-normal text-muted-foreground">
-              Each service folder inside it needs its own docker-compose.yml.
-            </span>
-          </div>
-
-          <div className={LABEL_CLASS}>
-            <label htmlFor="refresh">Health check interval</label>
-            <select
-              id="refresh"
-              value={form.healthCheckIntervalSeconds}
-              onChange={(event) =>
-                setForm((current) =>
-                  current
-                    ? {
-                        ...current,
-                        healthCheckIntervalSeconds: Number(event.target.value),
-                      }
-                    : current,
-                )
-              }
-              className={`${INPUT_CLASS} max-w-[240px]`}
+        <div role="tabpanel" id="settings-panel-general" aria-labelledby="settings-tab-general">
+          {error ? (
+            <section className="max-w-[760px] rounded-[14px] border border-border bg-card p-6 text-sm text-muted-foreground">
+              Could not load settings. Is the API running?
+            </section>
+          ) : isPending || !form || !settings ? (
+            <section className="max-w-[760px] rounded-[14px] border border-border bg-card p-6 text-sm text-muted-foreground">
+              Loading settings…
+            </section>
+          ) : (
+            <form
+              onSubmit={handleSave}
+              aria-label="Settings"
+              className="flex max-w-[760px] flex-col gap-[22px] rounded-[14px] border border-border bg-card p-6"
             >
-              {intervalOptions.map((seconds) => (
-                <option key={seconds} value={seconds}>
-                  Every {seconds} seconds
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className={LABEL_CLASS}>
+                <label htmlFor="root">Stack root folder</label>
+                <input
+                  id="root"
+                  type="text"
+                  value={form.stackRoot}
+                  onChange={(event) =>
+                    setForm((current) =>
+                      current ? { ...current, stackRoot: event.target.value } : current,
+                    )
+                  }
+                  className={`${INPUT_CLASS} font-mono text-[13px]`}
+                />
+                <span className="text-xs font-normal text-muted-foreground">
+                  Each service folder inside it needs its own docker-compose.yml.
+                </span>
+              </div>
 
-          <div className="flex flex-col gap-1">
-            {TOGGLES.map((toggle) => {
-              const on = form.notifications[toggle.key];
-
-              return (
-                <div
-                  key={toggle.key}
-                  className="flex items-center justify-between gap-4 border-t border-track py-3"
+              <div className={LABEL_CLASS}>
+                <label htmlFor="refresh">Health check interval</label>
+                <select
+                  id="refresh"
+                  value={form.healthCheckIntervalSeconds}
+                  onChange={(event) =>
+                    setForm((current) =>
+                      current
+                        ? {
+                            ...current,
+                            healthCheckIntervalSeconds: Number(event.target.value),
+                          }
+                        : current,
+                    )
+                  }
+                  className={`${INPUT_CLASS} max-w-[240px]`}
                 >
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium">{toggle.label}</span>
-                    <span className="text-xs text-muted-foreground">{toggle.hint}</span>
+                  {intervalOptions.map((seconds) => (
+                    <option key={seconds} value={seconds}>
+                      Every {seconds} seconds
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                {TOGGLES.map((toggle) => {
+                  const on = form.notifications[toggle.key];
+
+                  return (
+                    <div
+                      key={toggle.key}
+                      className="flex items-center justify-between gap-4 border-t border-track py-3"
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm font-medium">{toggle.label}</span>
+                        <span className="text-xs text-muted-foreground">{toggle.hint}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPreference(toggle.key, !on)}
+                        aria-pressed={on}
+                        aria-label={toggle.label}
+                        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+                          on ? "bg-brand" : "bg-border2"
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-1 size-5 rounded-full transition-[left] ${
+                            on ? "left-6 bg-brand-foreground" : "left-1 bg-fg2"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-col gap-3 border-t border-track pt-4">
+                <div className="flex flex-col gap-1">
+                  <h2 className="m-0 text-base font-bold text-foreground">Alert rules</h2>
+                  <p className="m-0 text-xs text-muted-foreground">
+                    Rules run on every status tick. Each incident opens one alert and resolves itself
+                    when the service recovers.
+                  </p>
+                </div>
+
+                {ALERT_RULES.map((rule) => {
+                  const on = form.notifications.rules[rule.key];
+
+                  return (
+                    <div
+                      key={rule.key}
+                      className="flex items-center justify-between gap-4 border-t border-track py-3"
+                    >
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm font-medium">{rule.label}</span>
+                        <span className="text-xs text-muted-foreground">{rule.hint}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setRule(rule.key, !on)}
+                        aria-pressed={on}
+                        aria-label={rule.label}
+                        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+                          on ? "bg-brand" : "bg-border2"
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-1 size-5 rounded-full transition-[left] ${
+                            on ? "left-6 bg-brand-foreground" : "left-1 bg-fg2"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-col gap-4 border-t border-track pt-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex flex-col gap-1">
+                    <h2 className="m-0 text-base font-bold text-foreground">Delivery channels</h2>
+                    <p className="m-0 text-xs text-muted-foreground">
+                      Optional push to Discord. Secrets stay on the API and are never
+                      sent back to this page.
+                    </p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setPreference(toggle.key, !on)}
-                    aria-pressed={on}
-                    aria-label={toggle.label}
-                    className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
-                      on ? "bg-brand" : "bg-border2"
-                    }`}
+                    onClick={() => void handleTest()}
+                    disabled={testPending}
+                    className="h-9 rounded-[9px] border border-border2 px-3 text-xs font-semibold text-foreground disabled:opacity-60"
                   >
-                    <span
-                      className={`absolute top-1 size-5 rounded-full transition-[left] ${
-                        on ? "left-6 bg-brand-foreground" : "left-1 bg-fg2"
-                      }`}
-                    />
+                    {testPending ? "Sending…" : "Send test"}
                   </button>
                 </div>
-              );
-            })}
-          </div>
 
-          <div className="flex flex-col gap-3 border-t border-track pt-4">
-            <div className="flex flex-col gap-1">
-              <h2 className="m-0 text-base font-bold text-foreground">Alert rules</h2>
-              <p className="m-0 text-xs text-muted-foreground">
-                Rules run on every status tick. Each incident opens one alert and resolves itself
-                when the service recovers.
-              </p>
-            </div>
+                <label className={LABEL_CLASS}>
+                  <span className="flex flex-wrap items-center gap-2">
+                    Discord webhook URL
+                    {settings.channels.discord && (
+                      <span className="rounded-full bg-ok-bg px-2 py-0.5 text-[11px] font-semibold text-ok">
+                        Configured
+                      </span>
+                    )}
+                  </span>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={form.notifications.discordWebhookUrl}
+                    onChange={(event) => setSecret("discordWebhookUrl", event.target.value)}
+                    placeholder={
+                      settings.channels.discord
+                        ? "•••••••••••••••• saved — type to replace"
+                        : "https://discord.com/api/webhooks/…"
+                    }
+                    className={`${INPUT_CLASS} font-mono text-[13px]`}
+                  />
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Enter a new URL to replace the saved webhook, or save an empty field to remove it.
+                  </span>
+                </label>
 
-            {ALERT_RULES.map((rule) => {
-              const on = form.notifications.rules[rule.key];
+                <p className="m-0 text-xs text-muted-foreground">
+                  “Send test” uses the saved channels, so save first.
+                </p>
+              </div>
 
-              return (
-                <div
-                  key={rule.key}
-                  className="flex items-center justify-between gap-4 border-t border-track py-3"
+              <div className="flex items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={saveMutation.isPending}
+                  className="h-11 rounded-[10px] bg-brand px-[18px] text-sm font-bold text-brand-foreground disabled:opacity-60"
                 >
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium">{rule.label}</span>
-                    <span className="text-xs text-muted-foreground">{rule.hint}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setRule(rule.key, !on)}
-                    aria-pressed={on}
-                    aria-label={rule.label}
-                    className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
-                      on ? "bg-brand" : "bg-border2"
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-1 size-5 rounded-full transition-[left] ${
-                        on ? "left-6 bg-brand-foreground" : "left-1 bg-fg2"
-                      }`}
-                    />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+                  {saveMutation.isPending ? "Saving…" : "Save settings"}
+                </button>
+              </div>
+            </form>
+          )}
 
-          <div className="flex flex-col gap-4 border-t border-track pt-4">
+          <section
+            aria-label="Manage services"
+            className="mt-[22px] flex max-w-[760px] flex-col gap-4 rounded-[14px] border border-border bg-card p-6"
+          >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex flex-col gap-1">
-                <h2 className="m-0 text-base font-bold text-foreground">Delivery channels</h2>
+                <h2 className="m-0 text-base font-bold text-foreground">Manage services</h2>
                 <p className="m-0 text-xs text-muted-foreground">
-                  Optional push to Discord. Secrets stay on the API and are never
-                  sent back to this page.
+                  Add, edit, remove, test, and reorder services stored in the dashboard database.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => void handleTest()}
-                disabled={testPending}
-                className="h-9 rounded-[9px] border border-border2 px-3 text-xs font-semibold text-foreground disabled:opacity-60"
+                onClick={() => setEditor({ mode: "add" })}
+                className="h-10 rounded-[10px] bg-brand px-4 text-[13px] font-bold text-brand-foreground"
               >
-                {testPending ? "Sending…" : "Send test"}
+                Add service
               </button>
             </div>
 
-            <label className={LABEL_CLASS}>
-              <span className="flex flex-wrap items-center gap-2">
-                Discord webhook URL
-                {settings.channels.discord && (
-                  <span className="rounded-full bg-ok-bg px-2 py-0.5 text-[11px] font-semibold text-ok">
-                    Configured
-                  </span>
-                )}
-              </span>
-              <input
-                type="password"
-                autoComplete="off"
-                value={form.notifications.discordWebhookUrl}
-                onChange={(event) => setSecret("discordWebhookUrl", event.target.value)}
-                placeholder={
-                  settings.channels.discord
-                    ? "•••••••••••••••• saved — type to replace"
-                    : "https://discord.com/api/webhooks/…"
-                }
-                className={`${INPUT_CLASS} font-mono text-[13px]`}
-              />
-              <span className="text-xs font-normal text-muted-foreground">
-                Enter a new URL to replace the saved webhook, or save an empty field to remove it.
-              </span>
-            </label>
-
-            <p className="m-0 text-xs text-muted-foreground">
-              “Send test” uses the saved channels, so save first.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={saveMutation.isPending}
-              className="h-11 rounded-[10px] bg-brand px-[18px] text-sm font-bold text-brand-foreground disabled:opacity-60"
-            >
-              {saveMutation.isPending ? "Saving…" : "Save settings"}
-            </button>
-          </div>
-        </form>
-      )}
-
-      <section
-        aria-label="Manage services"
-        className="mt-[22px] flex max-w-[760px] flex-col gap-4 rounded-[14px] border border-border bg-card p-6"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <h2 className="m-0 text-base font-bold text-foreground">Manage services</h2>
-            <p className="m-0 text-xs text-muted-foreground">
-              Add, edit, remove, test, and reorder services stored in the dashboard database.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setEditor({ mode: "add" })}
-            className="h-10 rounded-[10px] bg-brand px-4 text-[13px] font-bold text-brand-foreground"
-          >
-            Add service
-          </button>
+            {servicesPending ? (
+              <p className="m-0 text-sm text-muted-foreground">Loading services…</p>
+            ) : services.length === 0 ? (
+              <p className="m-0 text-sm text-muted-foreground">
+                No services yet. Add one from a folder under the stack root.
+              </p>
+            ) : (
+              <ul className="m-0 flex list-none flex-col gap-0 p-0">
+                {services.map((service) => (
+                  <li
+                    key={service.id}
+                    draggable
+                    onDragStart={() => setDraggedServiceId(service.id)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => {
+                      if (!draggedServiceId || draggedServiceId === service.id) return;
+                      const ids = services.map((item) => item.id);
+                      const from = ids.indexOf(draggedServiceId);
+                      const to = ids.indexOf(service.id);
+                      ids.splice(from, 1);
+                      ids.splice(to, 0, draggedServiceId);
+                      setDraggedServiceId(null);
+                      void reorderMutation.mutateAsync(ids).catch((err) =>
+                        toast(err instanceof Error ? err.message : "Could not reorder services", "error"),
+                      );
+                    }}
+                    className="flex flex-wrap items-center gap-3 border-t border-track py-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="m-0 flex flex-wrap items-center gap-2 text-sm font-medium">
+                        {service.name}
+                        <span className="rounded-full bg-field px-2 py-0.5 font-mono text-[11px] font-normal text-muted-foreground">
+                          {service.relativeFolder}
+                        </span>
+                      </p>
+                      <p className="m-0 mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                        {service.url}
+                        {healthPathFor(service)} · {service.composeFile}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditor({ mode: "edit", service })}
+                        className="h-9 rounded-[9px] border border-border2 px-3 text-xs font-semibold text-foreground"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleRemove(service)}
+                        disabled={deleteMutation.isPending}
+                        className="h-9 rounded-[9px] border border-bad-bg px-3 text-xs font-semibold text-bad disabled:opacity-60"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </div>
-
-        {servicesPending ? (
-          <p className="m-0 text-sm text-muted-foreground">Loading services…</p>
-        ) : services.length === 0 ? (
-          <p className="m-0 text-sm text-muted-foreground">
-            No services yet. Add one from a folder under the stack root.
-          </p>
-        ) : (
-          <ul className="m-0 flex list-none flex-col gap-0 p-0">
-            {services.map((service) => (
-              <li
-                key={service.id}
-                draggable
-                onDragStart={() => setDraggedServiceId(service.id)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => {
-                  if (!draggedServiceId || draggedServiceId === service.id) return;
-                  const ids = services.map((item) => item.id);
-                  const from = ids.indexOf(draggedServiceId);
-                  const to = ids.indexOf(service.id);
-                  ids.splice(from, 1);
-                  ids.splice(to, 0, draggedServiceId);
-                  setDraggedServiceId(null);
-                  void reorderMutation.mutateAsync(ids).catch((err) =>
-                    toast(err instanceof Error ? err.message : "Could not reorder services", "error"),
-                  );
-                }}
-                className="flex flex-wrap items-center gap-3 border-t border-track py-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="m-0 flex flex-wrap items-center gap-2 text-sm font-medium">
-                    {service.name}
-                    <span className="rounded-full bg-field px-2 py-0.5 font-mono text-[11px] font-normal text-muted-foreground">
-                      {service.relativeFolder}
-                    </span>
-                  </p>
-                  <p className="m-0 mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-                    {service.url}
-                    {healthPathFor(service)} · {service.composeFile}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditor({ mode: "edit", service })}
-                    className="h-9 rounded-[9px] border border-border2 px-3 text-xs font-semibold text-foreground"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleRemove(service)}
-                    disabled={deleteMutation.isPending}
-                    className="h-9 rounded-[9px] border border-bad-bg px-3 text-xs font-semibold text-bad disabled:opacity-60"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      )}
 
       {editor && (
         <ServiceDialog

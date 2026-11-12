@@ -6,12 +6,18 @@ import { getSettings } from "./settings.js";
 import { evaluateAlerts } from "./alerts.js";
 import { broadcast } from "./sse.js";
 import { recordStatusSamples } from "./uptime.js";
+import { activityWhere, type ActivityFilter } from "./activity-filter.js";
+
+export { activityWhere, MAX_ACTIVITY_LIMIT, type ActivityFilter } from "./activity-filter.js";
 
 export { addEventClient, broadcast } from "./sse.js";
 
 // ---------------------------------------------------------------------------
 // Activity
 // ---------------------------------------------------------------------------
+
+import type { ActivityOutcome, ActivitySource } from "./activity-filter.js";
+export type { ActivityOutcome, ActivitySource } from "./activity-filter.js";
 
 export interface ActivityEntry {
   id: number;
@@ -20,12 +26,20 @@ export interface ActivityEntry {
   message: string;
   actor: string;
   serviceId: number | null;
+  /** Registry id of the service the entry is about, when there is one. */
+  serviceKey: string | null;
+  outcome: ActivityOutcome;
+  /** "audit" for user/API state changes, "event" for status changes seen by the monitor. */
+  source: ActivitySource;
 }
 
 export async function recordActivity(input: {
   kind: string;
   message: string;
   actor: string;
+  serviceKey?: string | null;
+  outcome?: ActivityOutcome;
+  source?: ActivitySource;
 }): Promise<ActivityEntry> {
   const [row] = await db
     .insert(activity)
@@ -34,47 +48,83 @@ export async function recordActivity(input: {
       kind: input.kind,
       message: input.message,
       actor: input.actor,
+      service_key: input.serviceKey ?? null,
+      outcome: input.outcome ?? "ok",
+      source: input.source ?? "event",
     })
     .returning();
 
-  const entry: ActivityEntry = {
+  const entry = toEntry(row);
+  broadcast("activity.created", entry);
+  return entry;
+}
+
+interface ActivityRow {
+  id: number;
+  ts: string | number;
+  kind: string;
+  message: string;
+  actor: string;
+  service_id: number | null;
+  service_key: string | null;
+  outcome: string;
+  source: string;
+}
+
+function toEntry(row: ActivityRow): ActivityEntry {
+  return {
     id: row.id,
     ts: Number(row.ts),
     kind: row.kind,
     message: row.message,
     actor: row.actor,
     serviceId: row.service_id ?? null,
+    serviceKey: row.service_key ?? null,
+    outcome: row.outcome === "failed" ? "failed" : "ok",
+    source: row.source === "audit" ? "audit" : "event",
   };
-
-  broadcast("activity.created", entry);
-  return entry;
 }
 
-export async function listActivity(limit = 50): Promise<ActivityEntry[]> {
-  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 200);
-  const { rows } = await pool.query<{
-    id: number;
-    ts: string | number;
-    kind: string;
-    message: string;
-    actor: string;
-    service_id: number | null;
-  }>(
-    `SELECT id, ts, kind, message, actor, service_id
+export async function listActivity(
+  filterOrLimit: ActivityFilter | number = {},
+): Promise<{ activity: ActivityEntry[]; nextCursor: number | null }> {
+  const filter = typeof filterOrLimit === "number" ? { limit: filterOrLimit } : filterOrLimit;
+  const safeLimit = Math.min(Math.max(Math.trunc(filter.limit ?? 50), 1), 500);
+  const where = activityWhere(filter);
+
+  // Ask for one extra row to know whether another page exists.
+  const { rows } = await pool.query<ActivityRow>(
+    `SELECT id, ts, kind, message, actor, service_id, service_key, outcome, source
        FROM activity
-      ORDER BY ts DESC
-      LIMIT $1`,
-    [safeLimit],
+       ${where.sql}
+      ORDER BY id DESC
+      LIMIT $${where.params.length + 1}`,
+    [...where.params, safeLimit + 1],
   );
 
-  return rows.map((row) => ({
-    id: row.id,
-    ts: Number(row.ts),
-    kind: row.kind,
-    message: row.message,
-    actor: row.actor,
-    serviceId: row.service_id,
-  }));
+  const page = rows.slice(0, safeLimit).map(toEntry);
+  const nextCursor = rows.length > safeLimit ? page[page.length - 1]!.id : null;
+  return { activity: page, nextCursor };
+}
+
+/** Distinct values for the audit filter dropdowns. */
+export async function activityFacets(): Promise<{
+  kinds: string[];
+  actors: string[];
+  services: string[];
+}> {
+  const [kinds, actors, services] = await Promise.all([
+    pool.query<{ v: string }>("SELECT DISTINCT kind AS v FROM activity ORDER BY 1"),
+    pool.query<{ v: string }>("SELECT DISTINCT actor AS v FROM activity ORDER BY 1"),
+    pool.query<{ v: string }>(
+      "SELECT DISTINCT service_key AS v FROM activity WHERE service_key IS NOT NULL ORDER BY 1",
+    ),
+  ]);
+  return {
+    kinds: kinds.rows.map((r) => r.v),
+    actors: actors.rows.map((r) => r.v),
+    services: services.rows.map((r) => r.v),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +235,7 @@ export function startServiceMonitor(fallbackServices: Service[]): () => void {
             kind: STATUS_KIND[detail.status],
             message: `${detail.name} is ${detail.status}`,
             actor: "system",
+            serviceKey: detail.id,
           });
         }
       }

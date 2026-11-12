@@ -1,5 +1,12 @@
 # Current State Audit — custom-devops-stack
 
+> **Update 2026-11-12:** much of this audit has since been addressed: one entry point (`make` / `scripts/stack.sh`),
+> bootstrap with generated passwords, localhost binding for Jenkins and SonarQube, `make backup` with retention,
+> Gitleaks + Trivy (`make scan`, pre-commit, CI stages), the observability stack, and the StackPilot dashboard
+> with a full audit log. See `docs/PRACTICES-ROADMAP.md` and `docs/TOOLS-ROADMAP.md` for live status.
+> The resource figures below are from the original audit on the earlier machine; re-measure with `make doctor`
+> and the Grafana "Stack containers" dashboard.
+
 Audit date: 2026-08-09
 Host: MacBook Air (Apple Silicon, model T8112 / M2-class), Darwin 25.5.0
 

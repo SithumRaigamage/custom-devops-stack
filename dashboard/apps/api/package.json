@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/compose.test.ts src/status.test.ts src/integrations.test.ts src/registry.test.ts src/audit.test.ts"
+    "test": "node --import tsx --test src/compose.test.ts src/status.test.ts src/integrations.test.ts src/registry.test.ts src/audit.test.ts src/logs.test.ts"
   },
   "dependencies": {
     "@fastify/helmet": "^13.0.1",

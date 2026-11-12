@@ -3,9 +3,11 @@ services:
     image: custom-jenkins:latest
     restart: unless-stopped
 
+    # Local-only by default. Set JENKINS_BIND=0.0.0.0 in jenkins/.env to reach Jenkins
+    # (or attach inbound agents) from other machines on your network.
     ports:
-      - "8080:8080"
-      - "50000:50000"
+      - "${JENKINS_BIND:-127.0.0.1}:8080:8080"
+      - "${JENKINS_BIND:-127.0.0.1}:50000:50000"
 
     volumes:
       - ./jenkins_home:/var/jenkins_home

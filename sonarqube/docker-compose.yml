@@ -4,8 +4,9 @@ services:
     container_name: sonarqube
     restart: unless-stopped
 
+    # Local-only by default; set SONAR_BIND=0.0.0.0 in sonarqube/.env to expose it.
     ports:
-      - "9000:9000"
+      - "${SONAR_BIND:-127.0.0.1}:9000:9000"
 
     environment:
       SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"

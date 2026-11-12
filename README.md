@@ -10,23 +10,35 @@ own `docker-compose.yml`, README and bind-mounted data (no named volumes, so
 
 ```
 custom-devops-stack/
-├── script.sh        # Start/stop Jenkins, SonarQube and MongoDB together
+├── Makefile         # `make help`: one entry point for the whole stack
+├── scripts/         # stack.sh (up/down/status/logs/doctor/bootstrap), backup.sh, scan.sh
+├── script.sh        # Legacy: Jenkins, SonarQube and the local mongod (kept for compatibility)
+├── dashboard/       # StackPilot: web dashboard to run and watch the stack
 ├── jenkins/         # CI/CD server
 ├── sonarqube/       # Code quality (+ PostgreSQL)
 ├── open-webui/      # Chat UI for local Ollama models (own scripts + `webui` shell command)
+├── postgres/        # General-purpose PostgreSQL
+├── mongodb/         # MongoDB 7 in Docker
+├── observability/   # Prometheus, Grafana, cAdvisor, Loki, Promtail
 ├── images/          # Saved image tars for offline reload (git-ignored)
+├── backups/         # Output of `make backup` (git-ignored)
+├── reports/         # Output of `make scan` (git-ignored)
 └── docs/            # Tools and practices roadmaps
 ```
 
 How to work here:
 
-1. Start Docker Desktop (it does not start at login). Ollama must also be running for Open WebUI.
-2. Start what you need: `./script.sh start` for Jenkins/SonarQube/MongoDB, or `webui start` for Open WebUI (from any directory, once the shell helper is installed, see below).
-3. Work in the service's UI (see **Access Services**), keeping config in each service's folder and in Git.
-4. Stop with `./script.sh stop`, and `webui stop` for Open WebUI.
-5. Never commit secrets: real values go in gitignored `.env` files, with `.env.example` as the template.
+1. Start Docker Desktop (it does not start at login). Ollama must also be running for Open WebUI and the assistant.
+2. First time on a machine: `make bootstrap`, then `make doctor`.
+3. Start what you need: `make up` (dashboard DB, Jenkins, SonarQube), or pick: `make up S="open-webui mongodb"`.
+4. `make status`, `make logs S=jenkins`, `make down` (everything) or `make down S=sonarqube`.
+5. `make dashboard` runs StackPilot on http://localhost:3001.
+6. `make backup` before upgrades; `make scan` for secrets and image vulnerabilities; `make observability-up` for Grafana.
+7. Never commit secrets: real values go in gitignored `.env` files, with `.env.example` as the template. The pre-commit hooks (`pre-commit install`) block `.env` files and token-like strings.
 
-Note: `script.sh` does not manage Open WebUI, which is started and stopped on its own.
+Everything `make` does is a thin wrapper around `scripts/*.sh`, so `scripts/stack.sh up jenkins` works without make.
+Services: `jenkins sonarqube open-webui postgres mongodb dashboard-db`. Jenkins and SonarQube now bind to
+127.0.0.1; set `JENKINS_BIND=0.0.0.0` or `SONAR_BIND=0.0.0.0` in their `.env` to reach them from other machines.
 
 ### Open WebUI shell command (`webui`)
 
@@ -333,14 +345,14 @@ stack's local `mongod` defaults to 27018 instead.
      devops-network:
        external: true
    ```
-3. Add a `start_<service>` / `stop_<service>` function pair in `script.sh`, and call them from `start_services` / `stop_services`.
+3. Add a line for it to `SERVICES` in `scripts/stack.sh` (and to `IMAGE_TARS` if you keep an offline tar), and to the port table in `docs/TOOLS-ROADMAP.md`.
 4. Document the new service in the **Services** and **Data Persistence** sections above.
 
 ## 📝 TODO / Ideas for Later
 
-- [ ] Add `status` command to `script.sh` that checks all services at once (docker ps + pgrep mongod)
-- [ ] Add `logs` command to `script.sh` for quick `docker compose logs -f` per service
-- [ ] Add a `restart` command
+- [x] `make status`
+- [x] `make logs S=<service>`
+- [x] `make restart`
 - [ ] Wire up automated nightly backups (cron/launchd) using the backup script above
 - [ ] Add MongoDB authentication + connection string env var
 - [ ] Consider moving MongoDB into Docker Compose on `devops-network` for consistency

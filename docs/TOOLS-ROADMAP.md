@@ -27,16 +27,16 @@ Status key: **Installed** · **Planned** (priority picks) · **Idea** (not sched
 
 | Tool | What it adds | Notes | Status |
 |---|---|---|---|
-| Trivy (or Grype) | Vulnerability scan of images, dependencies and IaC | One container; Jenkins can call it. SonarQube does not scan images. | Planned |
-| Gitleaks | Secret scanning of files and git history | Run as a pre-commit hook and in Jenkins. Would have caught a token committed to a tracked `.env.example`. | Planned |
+| Trivy (or Grype) | Vulnerability scan of images, dependencies and IaC | One container; Jenkins can call it. SonarQube does not scan images. | Done: CI pipeline stage + `make scan-images` |
+| Gitleaks | Secret scanning of files and git history | Run as a pre-commit hook and in Jenkins. Would have caught a token committed to a tracked `.env.example`. | Done: CI stage, pre-commit hook, `make scan-secrets` |
 | Nexus or Harbor | Private registry and artifact store | Replaces the `images/` tar cache; Jenkins pushes builds here. Harbor is registry-focused, Nexus also stores Maven/npm/PyPI. | Planned |
 
 ### 2. Next — observability
 
 | Tool | What it adds | Notes | Status |
 |---|---|---|---|
-| Prometheus + Grafana + cAdvisor | Metrics and dashboards for container CPU/memory | Useful for checking the SonarQube memory limits. | Planned |
-| Loki + Promtail | Central logs | Replaces running each `*-logs` command separately. | Planned |
+| Prometheus + Grafana + cAdvisor | Metrics and dashboards for container CPU/memory | Useful for checking the SonarQube memory limits. | Done: `observability/` |
+| Loki + Promtail | Central logs | Replaces running each `*-logs` command separately. | Done: `observability/` |
 
 ### 3. Later — platform
 
@@ -51,10 +51,10 @@ Status key: **Installed** · **Planned** (priority picks) · **Idea** (not sched
 
 | Item | Why | Status |
 |---|---|---|
-| Root `docker-compose.yml` or Makefile | Stack no longer depends on functions in `~/.zshrc` | Planned |
+| Root `docker-compose.yml` or Makefile | Stack no longer depends on functions in `~/.zshrc` | Done: `Makefile` + `scripts/stack.sh` |
 | Jenkins Configuration as Code (JCasC) | Rebuild Jenkins from the repo | Planned |
 | `docs/` for ports and credentials policy | One source of truth | Planned (this file is the start) |
-| Backup script for `jenkins_home`, `sonarqube/postgresql` | Backup readiness | Idea |
+| Backup script for `jenkins_home`, `sonarqube/postgresql` | Backup readiness | Done: `make backup` |
 
 ## Full catalogue by category
 
@@ -132,8 +132,25 @@ Figures are estimates, not measurements. Measure with cAdvisor once it is runnin
 
 ## Port allocation
 
-Reserved: 8080, 50000 (Jenkins), 9000 (SonarQube), 27018 (MongoDB). Port 27017 is used by an unrelated project.
-Suggested for new services: Grafana 3000, Prometheus 9090, Loki 3100, Nexus 8081, Harbor 8082, Gitea 3001, Vault 8200, Traefik 80/443. Confirm each is free before use.
+All bound to 127.0.0.1 unless noted.
+
+| Port | Service |
+|---|---|
+| 3000 | Open WebUI |
+| 3001 | StackPilot dashboard (web) |
+| 3002 | Grafana |
+| 3100 | Loki |
+| 4000 | StackPilot API |
+| 5432 | StackPilot dashboard Postgres |
+| 5433 | General-purpose Postgres (`postgres/`) |
+| 8080, 50000 | Jenkins (`JENKINS_BIND` to expose) |
+| 8081 | cAdvisor |
+| 9000 | SonarQube (`SONAR_BIND` to expose) |
+| 9090 | Prometheus |
+| 11434 | Ollama (host) |
+| 27017 | MongoDB (`mongodb/`, Docker). Note the separate local `mongod` from `script.sh` uses 27018 |
+
+Suggested for future services: Nexus 8082, Harbor 8083, Gitea 3003, Vault 8200, Traefik 80/443. Confirm each is free before use (`make doctor` checks the reserved ones).
 
 ## How to add a tool
 

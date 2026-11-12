@@ -1,0 +1,8 @@
+apiVersion: 1
+providers:
+  - name: stack
+    folder: Stack
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

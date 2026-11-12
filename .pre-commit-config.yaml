@@ -1,0 +1,29 @@
+# Git hooks for the stack. Install once with:  pipx install pre-commit && pre-commit install
+# (`make bootstrap` installs the hooks automatically when pre-commit is available.)
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-merge-conflict
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+      - id: end-of-file-fixer
+        exclude: '\.(tar|md)$'
+      - id: trailing-whitespace
+        exclude: '\.md$'
+
+  - repo: local
+    hooks:
+      - id: no-env-files
+        name: Block committing .env files
+        entry: ".env files hold real credentials and must stay local (commit .env.example instead)"
+        language: fail
+        files: '(^|/)\.env$'

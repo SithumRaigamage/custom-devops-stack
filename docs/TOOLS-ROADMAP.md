@@ -20,6 +20,12 @@ Status key: **Installed** · **Planned** (priority picks) · **Idea** (not sched
 | Jenkins | CI/CD | Installed | 8080, 50000 |
 | SonarQube Community + PostgreSQL | Code quality | Installed | 9000 |
 | MongoDB (local binary) | Database | Installed | 27018 |
+| MongoDB 7 (Docker, `mongodb/`) | Database | Installed | 27017 |
+| PostgreSQL 16 (`postgres/`) | Database | Installed | 5433 |
+| Open WebUI + Ollama | Local LLM chat | Installed | 3000, 11434 |
+| StackPilot (`dashboard/`) | Stack dashboard, audit log | Installed | 3001, 4000, 5432 |
+| Prometheus, Grafana, cAdvisor, Loki, Promtail (`observability/`) | Metrics and logs | Installed | 9090, 3002, 8081, 3100 |
+| Gitleaks, Trivy (`make scan`, pre-commit, CI) | Security scanning | Installed | — |
 
 ## Recommended order
 
@@ -35,7 +41,7 @@ Status key: **Installed** · **Planned** (priority picks) · **Idea** (not sched
 
 | Tool | What it adds | Notes | Status |
 |---|---|---|---|
-| Prometheus + Grafana + cAdvisor | Metrics and dashboards for container CPU/memory | Useful for checking the SonarQube memory limits. | Done: `observability/` |
+| Prometheus + Grafana + cAdvisor | Metrics and dashboards for container CPU/memory | Useful for checking the SonarQube memory limits. cAdvisor needs v0.54+ and the containerd socket on Docker Desktop. Jenkins metrics need the *Prometheus metrics* plugin. | Done: `observability/` |
 | Loki + Promtail | Central logs | Replaces running each `*-logs` command separately. | Done: `observability/` |
 
 ### 3. Later — platform

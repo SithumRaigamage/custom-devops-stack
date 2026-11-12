@@ -1,0 +1,23 @@
+# Changelog
+
+Notable changes to the stack. Newest first. Commit history has the details.
+
+## 2026-11-12
+
+### Dashboard (StackPilot)
+- Audit log: every change through the dashboard or API is recorded (who, what, which service, ok/failed), never secret values. Settings → Audit log with filters, paging and CSV export.
+- API hardening: strict input validation on every route, rate limits on every change, log redaction, no CORS.
+- Discord-only alerts with rich embeds (Telegram removed).
+- Theme no longer re-saved on every page load.
+
+### Stack
+- One entry point: `Makefile` + `scripts/stack.sh` (up, down, status, logs, doctor, bootstrap). No dependency on `~/.zshrc`.
+- `make bootstrap` generates passwords for new `.env` files.
+- Jenkins and SonarQube bind to 127.0.0.1 (`JENKINS_BIND` / `SONAR_BIND` to expose).
+- `make backup` / `make restore-help`: database dumps, archives, checksums, keep newest 7.
+- Security: `make scan` (Gitleaks + Trivy), pre-commit hooks, `.gitleaksignore` for reviewed false positives.
+- Jenkins image: gosu 1.17 → 1.19 (removes a critical Go CVE). Rebuild needed.
+- Observability: Prometheus, Grafana (provisioned "Stack containers" dashboard), cAdvisor v0.60.4, Loki, Promtail.
+
+### Docs
+- README quick start, monitoring, scanning and backup sections; port table; roadmap statuses; this changelog.

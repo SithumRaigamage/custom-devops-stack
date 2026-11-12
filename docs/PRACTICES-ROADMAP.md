@@ -49,7 +49,7 @@ Items marked **P1** target those directly.
 | # | Item | What to do | Priority | Status |
 |---|---|---|---|---|
 | 14 | Backup script | Back up `jenkins/jenkins_home` and `sonarqube/postgresql` to a dated archive outside the repo. | P1 | Done: `make backup` (`scripts/backup.sh`, DB dumps + archives + checksums) |
-| 15 | Restore test | Restore a backup into a scratch location regularly. A backup that has never been restored is unproven. | P2 | Planned |
+| 15 | Restore test | Restore a backup into a scratch location regularly. A backup that has never been restored is unproven. | P2 | Next: run `make restore-help` steps on a copy |
 | 16 | Backup retention | Keep for example 7 daily and 4 weekly archives, and delete older ones only by rule. | P3 | Done: newest 7 kept (`BACKUP_KEEP`) |
 | 17 | Export configuration | Keep exported SonarQube gates, profiles and Jenkins config in the repo, so settings survive a lost volume. | P2 | Planned |
 
@@ -67,9 +67,9 @@ Items marked **P1** target those directly.
 
 | # | Item | What to do | Priority | Status |
 |---|---|---|---|---|
-| 23 | Update routine | Monthly: check for newer image versions, test, then bump the pinned versions. | P2 | Planned |
+| 23 | Update routine | Monthly: check for newer image versions, test, then bump the pinned versions. | P2 | Started: `make scan-images` shows what to update |
 | 24 | Architecture notes | A diagram of how services connect, plus a "what to do if X breaks" runbook. | P2 | Planned |
-| 25 | Commit conventions and CHANGELOG | Keep the existing `type: summary` commit style and record notable changes in a `CHANGELOG`. | P3 | Planned |
+| 25 | Commit conventions and CHANGELOG | Keep the existing `type: summary` commit style and record notable changes in a `CHANGELOG`. | P3 | Done: `CHANGELOG.md` |
 | 26 | Resource limits and a memory check | Limits on every container, and a check that the machine has enough free memory before the stack starts. | P2 | Partly: limits on every container; memory check not yet |
 | 27 | Port registry | One table of every port in use, to prevent conflicts (27017 is already taken by an unrelated project). | P2 | Done: see Port allocation in `TOOLS-ROADMAP.md` |
 | 28 | Log rotation | Cap Docker log size (`max-size`, `max-file`) so logs do not fill the disk. | P3 | Planned |

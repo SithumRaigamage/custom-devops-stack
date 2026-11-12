@@ -108,38 +108,48 @@ MongoDB runs separately as a local process (not on devops-network).
 
 ## 🚀 Quick Start
 
-### Using the control script (recommended)
-```bash
-cd /Users/sithumraigamage/Development/custom-devops-stack
+Run everything from the stack folder (`~/Other/02-DevOps-Lab/custom-devops-stack`). `make help` lists all targets.
 
-./script.sh start         # Starts MongoDB, Jenkins, SonarQube
-./script.sh stop          # Stops SonarQube, Jenkins, MongoDB
-./script.sh mongo-start   # Starts only MongoDB
-./script.sh mongo-stop    # Stops only MongoDB
+```bash
+make bootstrap                 # first time only: .env files with generated passwords, images, dashboard deps, git hooks
+make doctor                    # check Docker, tools, ports and .env files
+make up                        # dashboard DB + Jenkins + SonarQube
+make up S="open-webui mongodb" # pick services
+make status                    # containers and health
+make logs S=jenkins            # follow one service's logs
+make dashboard                 # StackPilot on http://localhost:3001 (Ctrl+C to stop)
+make observability-up          # Grafana, Prometheus, cAdvisor, Loki, Promtail
+make observability-down        # stop the monitoring stack
+make down                      # stop every service
 ```
 
-### Manual start (per service)
-```bash
-# Start Jenkins
-cd /Users/sithumraigamage/Development/custom-devops-stack/jenkins
-docker compose up -d
-
-# Start SonarQube
-cd /Users/sithumraigamage/Development/custom-devops-stack/sonarqube
-docker compose up -d
-```
-
-### Check Status
-```bash
-docker ps
-pgrep -x mongod
-```
+`script.sh` still works for the local `mongod` (`./script.sh mongo-start`), but `make` is the main entry point.
 
 ### Access Services
-- **Jenkins**: http://localhost:8080
-- **SonarQube**: http://localhost:9000
-- **Open WebUI**: http://localhost:3000
-- **MongoDB**: mongodb://localhost:27018
+| Service | URL | Login |
+|---|---|---|
+| StackPilot dashboard | http://localhost:3001 | admin account created on first visit |
+| Jenkins | http://localhost:8080 | Jenkins admin |
+| SonarQube | http://localhost:9000 | SonarQube admin |
+| Open WebUI | http://localhost:3000 | Open WebUI account |
+| Grafana | http://localhost:3002 | `admin` + `GRAFANA_ADMIN_PASSWORD` set at first start (see `observability/README.md`) |
+| Prometheus | http://localhost:9090 | none (localhost only) |
+
+All of these listen on 127.0.0.1 only.
+
+## 🔎 Monitoring
+
+`make observability-up` starts the stack in `observability/`. In Grafana open **Dashboards → Stack → Stack containers** for CPU, memory, memory vs limit, network and logs per container. Loki keeps 7 days of logs, Prometheus 15 days of metrics. The whole monitoring stack uses about 300 MB of RAM. Details and Loki queries: `observability/README.md`.
+
+## 🛡️ Security Scanning
+
+| Command | What it does |
+|---|---|
+| `make scan-secrets` | Gitleaks over files and the full git history (`.gitleaks.toml`; reviewed false positives in `.gitleaksignore`) |
+| `make scan-images` | Trivy: fixable HIGH/CRITICAL vulnerabilities in every stack image, one summary line per image |
+| `make scan` | Both. Reports go to `reports/` (git-ignored); non-zero exit when there are findings |
+
+The same checks run on every commit through the pre-commit hooks (Gitleaks, private keys, `.env` files) and in the Jenkins pipeline template (`jenkins/CI.JenkinsFile`).
 
 ## 🔗 Integration Guide
 
@@ -236,29 +246,23 @@ All data is stored on your local machine:
 
 ## 📦 Backup Strategy
 
-### Full Backup
 ```bash
-#!/bin/bash
-BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
-STACK_DIR="/Users/sithumraigamage/Development/custom-devops-stack"
-DEV_DIR="/Users/sithumraigamage/Development"
-BACKUP_DIR="$DEV_DIR/backups"
-
-mkdir -p "$BACKUP_DIR"
-
-# Stop services
-"$STACK_DIR/script.sh" stop
-
-# Create backups
-tar -czf "$BACKUP_DIR/jenkins-$BACKUP_DATE.tar.gz" -C "$STACK_DIR/jenkins" jenkins_home
-tar -czf "$BACKUP_DIR/sonarqube-$BACKUP_DATE.tar.gz" -C "$STACK_DIR/sonarqube" data extensions logs postgresql
-tar -czf "$BACKUP_DIR/mongodb-$BACKUP_DATE.tar.gz" -C "$DEV_DIR/mongodb-macos-aarch64--8.2.3" data
-
-# Restart services
-"$STACK_DIR/script.sh" start
-
-echo "Backup completed: $BACKUP_DIR"
+make backup          # writes backups/<timestamp>/ and keeps the newest 7 (BACKUP_KEEP)
+make restore-help    # restore steps per service
 ```
+
+What gets backed up (only what is running for the databases):
+
+| Item | How | File |
+|---|---|---|
+| Jenkins | archive of `jenkins_home` without workspaces and caches | `jenkins_home.tar.gz` (~2.4 GB) |
+| SonarQube DB | `pg_dump` from `sonarqube-db` | `sonarqube-db.sql.gz` |
+| Postgres | `pg_dumpall` from `stack-postgres` | `stack-postgres.sql.gz` |
+| Dashboard DB | `pg_dump` from `stackpilot-postgres` | `stackpilot.sql.gz` |
+| MongoDB | `mongodump` from `stack-mongodb` | `mongodb.archive.gz` |
+| Open WebUI | chats DB, uploads, vector store (model cache excluded) | `open-webui-data.tar.gz` |
+
+Each backup has a `SHA256SUMS` file; check it with `shasum -a 256 -c SHA256SUMS` inside the folder. Start SonarQube, Postgres and MongoDB before `make backup` if you want them included. Backups stay on this Mac, so copy important ones to another disk.
 
 ## 🧹 Maintenance
 
@@ -348,14 +352,19 @@ stack's local `mongod` defaults to 27018 instead.
 3. Add a line for it to `SERVICES` in `scripts/stack.sh` (and to `IMAGE_TARS` if you keep an offline tar), and to the port table in `docs/TOOLS-ROADMAP.md`.
 4. Document the new service in the **Services** and **Data Persistence** sections above.
 
-## 📝 TODO / Ideas for Later
+## 📝 What's Next
 
-- [x] `make status`
-- [x] `make logs S=<service>`
-- [x] `make restart`
-- [ ] Wire up automated nightly backups (cron/launchd) using the backup script above
-- [ ] Add MongoDB authentication + connection string env var
-- [ ] Consider moving MongoDB into Docker Compose on `devops-network` for consistency
+The live plan is in `docs/PRACTICES-ROADMAP.md` and `docs/TOOLS-ROADMAP.md`; changes are logged in `CHANGELOG.md`. Short list:
+
+- [ ] Rebuild Jenkins (gosu 1.19), pull fresh Postgres/Mongo/Open WebUI images, bump SonarQube, then `make scan` to compare
+- [ ] Install the Jenkins *Prometheus metrics* plugin so Prometheus collects Jenkins data
+- [ ] Test a restore from `make backup` into a scratch location
+- [ ] Schedule `make backup` (launchd) and copy backups off the Mac
+- [ ] Run `pnpm audit --audit-level high` in `dashboard/`
+- [ ] Jenkins Configuration as Code, its own SonarQube user and token
+- [ ] Docker log rotation and a free-memory check in `make doctor`
+- [ ] Add MongoDB authentication
+- [ ] Later: Nexus/Harbor registry, Traefik, Gitea, Vault, Terraform + k3d
 
 ## 📚 Additional Resources
 

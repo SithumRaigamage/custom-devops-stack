@@ -29,4 +29,26 @@ Useful log queries in Grafana → Explore → Loki:
 - **Jenkins:** install the *Prometheus metrics* plugin. Prometheus already scrapes `jenkins:8080/prometheus` and shows the target as down until the plugin is installed.
 - **SonarQube:** its monitoring endpoint needs a system passcode. See the comment in `prometheus/prometheus.yml`.
 
-Resource cost: about 1.5 GB RAM in total with the limits set in `docker-compose.yml`.
+## Login
+
+Grafana user is `admin`. The password is `GRAFANA_ADMIN_PASSWORD` from `observability/.env` **at the first start only**; Grafana stores it in its volume, so editing `.env` later changes nothing. To change it:
+
+```bash
+docker exec -it obs-grafana grafana cli admin reset-admin-password 'new-password'
+```
+
+Then put the same value in `.env` so the file stays truthful.
+
+## cAdvisor on Docker Desktop
+
+Recent Docker Desktop stores images with containerd. cAdvisor needs three things to see containers there, all set in `docker-compose.yml`:
+
+1. **v0.54 or newer** (`ghcr.io/google/cadvisor`). Older versions log `failed to identify the read-write layer ID` and report no containers.
+2. **The Docker socket mounted as a file** (`/var/run/docker.sock`). Mounting the whole `/var/run` folder does not pass it through.
+3. **The containerd socket** (`/run/containerd/containerd.sock`).
+
+Check it works: Prometheus → query `container_memory_working_set_bytes{name!=""}` should return one series per running container. cAdvisor's own logs are in Loki: `{container="obs-cadvisor"}`.
+
+## Resource cost
+
+Measured on 12 Nov 2026: about 300 MB RAM for all five containers (Grafana ~90 MB, Loki ~70 MB, Prometheus ~55 MB, Promtail ~40 MB, cAdvisor ~20 MB). Limits in `docker-compose.yml` cap the total at about 1.6 GB.

@@ -1,0 +1,54 @@
+# GlitchTip: self-hosted error and crash reporting (Sentry-SDK compatible) for the
+# projects in this lab. First user: JobTrigger (Flutter app, Next.js website, Node backend).
+# Runs in GlitchTip 6's all-in-one mode (web + worker in one container) with no
+# Valkey/Redis: cache, tasks and sessions live in Postgres. Its data is in the general
+# Postgres (postgres/, port 5433), database "glitchtip", so `make backup` includes it.
+#
+#   make up S="postgres glitchtip"     http://localhost:3005
+name: glitchtip
+
+services:
+  glitchtip:
+    image: glitchtip/glitchtip:6.1.0
+    container_name: stack-glitchtip
+    restart: unless-stopped
+    command: ./bin/run-all-in-one.sh
+    environment:
+      DATABASE_URL: postgres://${GLITCHTIP_DB_USER:-glitchtip}:${GLITCHTIP_DB_PASSWORD:?Set GLITCHTIP_DB_PASSWORD in glitchtip/.env (run make bootstrap)}@${GLITCHTIP_DB_HOST:-host.docker.internal}:${GLITCHTIP_DB_PORT:-5433}/${GLITCHTIP_DB_NAME:-glitchtip}
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?Set GLITCHTIP_SECRET_KEY in glitchtip/.env (run make bootstrap)}
+      # Empty = no Valkey/Redis; GlitchTip uses Postgres instead (less RAM, slower).
+      VALKEY_URL: ""
+      PORT: "8000"
+      # The address the web UI, DSNs and links use. Keep localhost: for an iPhone,
+      # set GLITCHTIP_BIND=0.0.0.0 and JobTrigger's run-on-iphone.sh puts the Mac's
+      # current address (Wi-Fi or hotspot) into the DSN.
+      GLITCHTIP_DOMAIN: ${GLITCHTIP_DOMAIN:-http://localhost:3005}
+      # Alerts and invites go to Mailpit (mailpit/) when it runs; nothing is delivered.
+      EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-smtp://stack-mailpit:1025}
+      DEFAULT_FROM_EMAIL: ${GLITCHTIP_FROM_EMAIL:-glitchtip@devops.local}
+      # Leave true until your account exists, then set false in .env.
+      ENABLE_USER_REGISTRATION: ${GLITCHTIP_ENABLE_REGISTRATION:-true}
+      GLITCHTIP_MAX_EVENT_LIFE_DAYS: ${GLITCHTIP_EVENT_DAYS:-30}
+      TZ: ${TZ:-UTC}
+    ports:
+      - "${GLITCHTIP_BIND:-127.0.0.1}:${GLITCHTIP_PORT:-3005}:8000"
+    volumes:
+      - ./data/uploads:/code/uploads
+    # Reaches stack-postgres through its published port on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/_health/', timeout=4)\" || exit 1"]
+      interval: 20s
+      timeout: 6s
+      retries: 10
+      start_period: 90s
+    networks: [devops-network]
+    deploy:
+      resources:
+        limits: { memory: 512M, cpus: "0.5" }
+
+networks:
+  devops-network:
+    name: devops-network
+    driver: bridge

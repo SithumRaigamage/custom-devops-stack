@@ -1,5 +1,5 @@
 # Umami: privacy-friendly product analytics (page views and custom events) for the
-# projects in this lab. First user: JobTrigger (app + website, via server-side calls).
+# projects in this lab. First user: JobTrigger (website and backend, server-side calls only).
 # Its data lives in the general Postgres (postgres/, port 5433), database "umami",
 # so `make backup` already includes it (pg_dumpall of stack-postgres).
 #

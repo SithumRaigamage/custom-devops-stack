@@ -37,7 +37,7 @@ All Jenkins data is stored on your local machine in the following directory:
 ### Start Jenkins
 
 ```bash
-cd /Users/sithumraigamage/Development/custom-devops-stack/jenkins
+cd ~/Other/02-DevOps-Lab/custom-devops-stack/jenkins
 docker compose up -d
 ```
 
@@ -73,6 +73,59 @@ cat ./jenkins_home/secrets/initialAdminPassword
 Both Jenkins and SonarQube are on the same `devops-network`, allowing them to communicate.
 
 **SonarQube URL from Jenkins**: `http://sonarqube:9000`
+
+## 🧰 What pipelines can use on the agent
+
+Builds run on the built-in node (2 executors) inside the `custom-jenkins` container,
+which is **Debian 13 on arm64** on this Mac.
+
+| Available | Name / ID in Jenkins |
+| --- | --- |
+| Docker CLI (host daemon via `docker.sock`) | — |
+| Trivy 0.76.2 | on `PATH` (`TRIVY_VERSION` in `Dockerfile`) |
+| Node.js 25.4.0 | tool `NODEJS` |
+| SonarScanner | tool `SonarScanner`, server `SonarServer` (`http://sonarqube:9000`) |
+| Credentials | `github-ssh-key`, `sonarqube-token`, `gmail-smtp-creds`, `github-token` |
+
+Not on the agent: `python3`, a macOS agent (no `macos` label), a `codecov-token`
+credential. Run anything else in a container (below).
+
+### Running tools in containers (Docker-in-Docker)
+
+Jenkins talks to the **host's** Docker daemon, so a `-v "$WORKSPACE:/repo"` mount
+resolves `$WORKSPACE` on the host, where it doesn't exist: the container silently
+gets an **empty** folder. Share the agent's real mount instead; the workspace keeps
+the same path:
+
+```bash
+docker run --rm --volumes-from "$(hostname)" -w "$WORKSPACE" \
+  -u "$(id -u):$(id -g)" -e HOME=/tmp <image> <command>
+```
+
+`-u` keeps files in the workspace owned by `jenkins`. Prefer multi-arch images:
+x86-only binaries and the Linux Android build tools need `--platform linux/amd64`
+(emulated, slower). `CI.JenkinsFile` already uses this pattern.
+
+### Email recipients
+
+The template's emails can take the sender from the `gmail-smtp-creds` credential's
+username. Pipelines in public repositories should do that rather than hardcode
+addresses; they read the receiver from a `CI_RECEIVER_EMAIL` global property
+(Manage Jenkins → System → Global properties) when one is set.
+
+## 🗂️ Job layout
+
+Jobs live in `jenkins_home/jobs` (git-ignored). Convention:
+
+```text
+Projects/<Project>/<Project>-<component>/CI-Pipeline/<Project>-<component>-CI
+Projects/<Project>/<Project>-<component>/CD-Pipeline/<Project>-<component>-CD
+```
+
+Each job is "Pipeline script from SCM" over SSH (`github-ssh-key`), lightweight
+checkout, no concurrent builds, last 30 builds kept. Example: `Projects/JobTrigger`
+(backend, frontend, website, security, tools CI; release CD), whose Jenkinsfiles
+live in that repository under `Jenkins/<component>/Jenkinsfile`.
 
 ## 📦 Backup
 

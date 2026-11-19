@@ -28,6 +28,7 @@ Status key: **Installed** · **Planned** (priority picks) · **Idea** (not sched
 | Gitleaks, Trivy (`make scan`, pre-commit, CI) | Security scanning | Installed | — |
 | Umami (`analytics/`) | Product analytics, data in `postgres/` | Installed | 3004 |
 | Mailpit (`mailpit/`) | Local mail catcher | Installed | 1025, 8025 |
+| GlitchTip (`glitchtip/`) | Error and crash reporting, data in `postgres/` | Installed (verified 2026-11-14: healthy, migrations applied) | 3005 |
 
 ## Recommended order
 
@@ -96,7 +97,7 @@ Nexus Repository, Harbor, JFrog Artifactory OSS, Docker Registry (`registry:2`),
 - Logs: Loki, Promtail, Grafana Alloy, ELK/OpenSearch, Graylog.
 - Tracing: Jaeger, Tempo, OpenTelemetry Collector.
 - Uptime: Uptime Kuma, Blackbox exporter.
-- Errors: Sentry (self-hosted), GlitchTip (planned next for JobTrigger crash reports; Sentry-SDK compatible, can reuse `postgres/`).
+- Errors: Sentry (self-hosted), GlitchTip (added 2026-11-14 in `glitchtip/` for JobTrigger crash reports; all-in-one mode, no Valkey, data in `postgres/`).
 - Product analytics: Umami (installed), Plausible, PostHog (too heavy for this Mac).
 
 ### Infrastructure and platform

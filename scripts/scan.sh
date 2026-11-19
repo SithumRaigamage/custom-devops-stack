@@ -29,6 +29,7 @@ STACK_IMAGES=(
   "ghcr.io/open-webui/open-webui:main"
   "ghcr.io/umami-software/umami:3.2.0"
   "axllent/mailpit:v1.29.2"
+  "glitchtip/glitchtip:6.1.0"
 )
 
 scan_secrets() {

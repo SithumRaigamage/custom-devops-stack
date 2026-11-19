@@ -22,6 +22,7 @@ custom-devops-stack/
 ├── observability/   # Prometheus, Grafana, cAdvisor, Loki, Promtail
 ├── analytics/       # Umami product analytics (data in postgres/)
 ├── mailpit/         # Local mail catcher (SMTP 1025, inbox 8025)
+├── glitchtip/       # GlitchTip error and crash reporting (data in postgres/)
 ├── images/          # Saved image tars for offline reload (git-ignored)
 ├── backups/         # Output of `make backup` (git-ignored)
 ├── reports/         # Output of `make scan` (git-ignored)
@@ -33,13 +34,14 @@ How to work here:
 1. Start Docker Desktop (it does not start at login). Ollama must also be running for Open WebUI and the assistant.
 2. First time on a machine: `make bootstrap`, then `make doctor`.
 3. Start what you need: `make up` (dashboard DB, Jenkins, SonarQube), or pick: `make up S="open-webui mongodb"`.
+   For app analytics and email testing (JobTrigger): `make bootstrap` once (creates `analytics/.env`), then `make up S="postgres analytics mailpit"`. Crash reporting: `make up S="postgres glitchtip"`.
 4. `make status`, `make logs S=jenkins`, `make down` (everything) or `make down S=sonarqube`.
 5. `make dashboard` runs StackPilot on http://localhost:3001.
 6. `make backup` before upgrades; `make scan` for secrets and image vulnerabilities; `make observability-up` for Grafana.
 7. Never commit secrets: real values go in gitignored `.env` files, with `.env.example` as the template. The pre-commit hooks (`pre-commit install`) block `.env` files and token-like strings.
 
 Everything `make` does is a thin wrapper around `scripts/*.sh`, so `scripts/stack.sh up jenkins` works without make.
-Services: `jenkins sonarqube open-webui postgres mongodb dashboard-db analytics mailpit`. Jenkins and SonarQube now bind to
+Services: `jenkins sonarqube open-webui postgres mongodb dashboard-db analytics mailpit glitchtip`. Jenkins and SonarQube now bind to
 127.0.0.1; set `JENKINS_BIND=0.0.0.0` or `SONAR_BIND=0.0.0.0` in their `.env` to reach them from other machines.
 
 ### Open WebUI shell command (`webui`)
@@ -99,6 +101,13 @@ Full table in `open-webui/README.md`.
 - **Data Location**: `./mailpit/data` (disposable, not backed up)
 - **Documentation**: See `mailpit/README.md`
 
+### 7. Error tracking — GlitchTip (`./glitchtip`)
+- **Purpose**: Self-hosted crash and error reporting for lab projects (Sentry-SDK compatible), first JobTrigger
+- **Ports**: 3005 on `127.0.0.1` (set `GLITCHTIP_BIND=0.0.0.0` only to test from a phone on the LAN)
+- **Data Location**: database `glitchtip` in the general Postgres (`postgres/`, port 5433); uploads in `./glitchtip/data/uploads`
+- **Requires**: `postgres` running; `scripts/stack.sh up glitchtip` creates the role and database (`glitchtip/scripts/init-db.sh`)
+- **Documentation**: See `glitchtip/README.md`
+
 ## 🌐 Network Architecture
 
 Jenkins and SonarQube are connected via a shared Docker network: `devops-network`
@@ -130,6 +139,8 @@ make bootstrap                 # first time only: .env files with generated pass
 make doctor                    # check Docker, tools, ports and .env files
 make up                        # dashboard DB + Jenkins + SonarQube
 make up S="open-webui mongodb" # pick services
+make up S="postgres analytics mailpit"  # Umami analytics (:3004) + Mailpit email (:1025 SMTP, :8025 inbox)
+make up S="postgres glitchtip"  # GlitchTip crash reporting (:3005)
 make status                    # containers and health
 make logs S=jenkins            # follow one service's logs
 make dashboard                 # StackPilot on http://localhost:3001 (Ctrl+C to stop)
@@ -151,6 +162,7 @@ make down                      # stop every service
 | Prometheus | http://localhost:9090 | none (localhost only) |
 | Umami (analytics) | http://localhost:3004 | `admin` / `umami` on first login, change it |
 | Mailpit (email inbox) | http://localhost:8025 | none (localhost only) |
+| GlitchTip (crash reports) | http://localhost:3005 | account created on first visit; then turn sign-up off |
 
 All of these listen on 127.0.0.1 only.
 
@@ -245,6 +257,7 @@ All data is stored on your local machine:
 | Open WebUI | Image backup tar | `./open-webui/backup` |
 | Umami | Analytics events | database `umami` in `stack-postgres` (backed up with Postgres) |
 | Mailpit | Caught emails | `./mailpit/data` |
+| GlitchTip | Error events | database `glitchtip` in `stack-postgres` (backed up with Postgres); uploads in `./glitchtip/data/uploads` |
 | MongoDB | Database files | `../mongodb-macos-aarch64--8.2.3/data/db` |
 
 **Important**: Deleting Docker containers will NOT delete your data!

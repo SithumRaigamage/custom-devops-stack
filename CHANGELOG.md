@@ -2,6 +2,11 @@
 
 Notable changes to the stack. Newest first. Commit history has the details.
 
+## 2026-11-14
+
+### New services
+- **GlitchTip (`glitchtip/`)**: 6.1.0 on port 3005 for crash and error reporting (Sentry-SDK compatible), first for JobTrigger. All-in-one mode (web and worker in one container) with no Valkey/Redis, so it adds one container capped at 512 MB. Reuses the general Postgres (database `glitchtip`, created by `glitchtip/scripts/init-db.sh` on `up`), so `make backup` covers it. Alert email goes to Mailpit. `127.0.0.1` only, health check, `devops-network`, in `scripts/stack.sh` (bootstrap, doctor, up/down) and `make scan-images`. Verified on this Mac 2026-11-14 (container healthy, migrations applied). Start Mailpit with it: sign-up sends a verification email, and `stack.sh up glitchtip` now warns when Mailpit is down.
+
 ## 2026-11-12
 
 ### New services

@@ -4,18 +4,23 @@ services:
     container_name: sonarqube
     restart: unless-stopped
 
-    # Local-only by default; set SONAR_BIND=0.0.0.0 in sonarqube/.env to expose it.
+    # Reachable from localhost and LAN by default. Set SONAR_BIND to a
+    # specific interface address when a narrower binding is required.
     ports:
-      - "${SONAR_BIND:-127.0.0.1}:9000:9000"
+      - "${SONAR_BIND:-0.0.0.0}:9000:9000"
 
     environment:
       SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
       SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonar
       SONAR_JDBC_USERNAME: sonar
       SONAR_JDBC_PASSWORD: ${SONARQUBE_DB_PASSWORD:?Set SONARQUBE_DB_PASSWORD in sonarqube/.env (see .env.example)}
-      SONAR_WEB_JAVAOPTS: "-Xmx1G -Xms1G"
-      SONAR_CE_JAVAOPTS: "-Xmx1G -Xms1G"
-      SONAR_SEARCH_JAVAOPTS: "-Xmx2G -Xms2G -Des.cluster.routing.allocation.disk.threshold_enabled=false"
+      # The three heaps must fit the 4G container limit WITH room for each JVM's
+      # off-heap memory and the launcher process. At 1G+1G+2G (= the whole 4G)
+      # the kernel killed Elasticsearch (exit 137) and SonarQube crash-looped.
+      # 768M+768M+1G leaves ~1.4G headroom; SonarQube's defaults are 512M each.
+      SONAR_WEB_JAVAOPTS: "-Xmx768m -Xms768m"
+      SONAR_CE_JAVAOPTS: "-Xmx768m -Xms768m"
+      SONAR_SEARCH_JAVAOPTS: "-Xmx1G -Xms1G -Des.cluster.routing.allocation.disk.threshold_enabled=false"
 
     volumes:
       - ./data:/opt/sonarqube/data

@@ -43,8 +43,8 @@ curl -s http://localhost:3004/api/send \
 Umami drops requests without a browser-like `User-Agent` (bot filter). Never put
 emails, tokens or server URLs in `data`.
 
-To let a phone on the same Wi-Fi send events directly, set `UMAMI_BIND=0.0.0.0`
-and use the Mac's Wi-Fi address (`ipconfig getifaddr en0`).
+JobTrigger sends events only from its website and backend servers (the mobile
+app sends none), so Umami can stay bound to `127.0.0.1`.
 
 ## Configuration (`.env`)
 

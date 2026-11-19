@@ -10,7 +10,7 @@
 #   scripts/stack.sh bootstrap             first-time setup (env files, images, dashboard deps)
 #   scripts/stack.sh list                  service names
 #
-# Services: jenkins sonarqube open-webui postgres mongodb dashboard-db analytics mailpit
+# Services: jenkins sonarqube open-webui postgres mongodb dashboard-db analytics mailpit glitchtip
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,6 +26,7 @@ SERVICES=(
   "dashboard-db|dashboard|postgres|5432"
   "analytics|analytics||3004"
   "mailpit|mailpit||1025 8025"
+  "glitchtip|glitchtip||3005"
 )
 DEFAULT_UP=(dashboard-db jenkins sonarqube)
 
@@ -87,7 +88,7 @@ ensure_images() {
 
 ensure_env() { # copy .env.example → .env where a folder needs one
   local folder
-  for folder in sonarqube postgres observability analytics mailpit; do
+  for folder in sonarqube postgres observability analytics mailpit glitchtip; do
     if [ -f "$ROOT/$folder/.env.example" ] && [ ! -f "$ROOT/$folder/.env" ]; then
       # Fresh .env: replace every `change-me` placeholder with its own random secret.
       # Only for new files; an existing database keeps the password it was created with.
@@ -118,6 +119,13 @@ cmd_up() {
     if [ "$svc" = "mailpit" ]; then mkdir -p "$ROOT/mailpit/data"; fi
     # Umami keeps its data in the general Postgres: make sure its role and DB exist.
     if [ "$svc" = "analytics" ]; then "$ROOT/analytics/scripts/init-db.sh"; fi
+    # GlitchTip too (database "glitchtip"); its uploads folder lives next to it.
+    if [ "$svc" = "glitchtip" ]; then mkdir -p "$ROOT/glitchtip/data/uploads"; "$ROOT/glitchtip/scripts/init-db.sh"; fi
+    # Sign-up and alert emails go to Mailpit; without it, GlitchTip's sign-up fails with a 500.
+    if [ "$svc" = "glitchtip" ] && [ "$(docker inspect -f '{{.State.Running}}' stack-mailpit 2>/dev/null || true)" != "true" ] \
+      && grep -q '^GLITCHTIP_EMAIL_URL=smtp://stack-mailpit' "$ROOT/glitchtip/.env" 2>/dev/null; then
+      warn "Mailpit isn't running: GlitchTip sign-up and alert emails will fail. Start it too: make up S=mailpit"
+    fi
     # shellcheck disable=SC2086
     compose "$svc" up -d $filter
     ok "$svc started"
@@ -129,7 +137,7 @@ cmd_down() {
   local targets=("$@")
   if [ ${#targets[@]} -eq 0 ]; then
     # Stop in reverse dependency order; dashboard-db last so the UI sees the others stop.
-    targets=(analytics mailpit open-webui sonarqube jenkins mongodb postgres dashboard-db)
+    targets=(glitchtip analytics mailpit open-webui sonarqube jenkins mongodb postgres dashboard-db)
   fi
   local svc filter
   for svc in "${targets[@]}"; do
@@ -175,7 +183,7 @@ cmd_doctor() {
   command -v ollama >/dev/null 2>&1 && ok "ollama installed" || warn "ollama missing (assistant and Open WebUI need it)"
 
   local folder
-  for folder in sonarqube postgres analytics; do
+  for folder in sonarqube postgres analytics glitchtip; do
     if [ -f "$ROOT/$folder/.env" ]; then
       if grep -q 'change-me' "$ROOT/$folder/.env"; then warn "$folder/.env still contains 'change-me'"; failed=1
       else ok "$folder/.env present"; fi

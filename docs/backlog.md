@@ -15,7 +15,7 @@ session; start it first if the containers are down.
 
 | # | Item | Why / notes | Area |
 |---|---|---|---|
-| J10 | Merge the JobTrigger `Jenkins/` folder to `develop` | Jobs build from `docs/product-proposals-phase-26`; after the merge, switch each job's branch to `*/develop` | CI/CD |
+| J10 | Merge the JobTrigger `Jenkins/` folder to `develop` | **BLOCKED:** local merge `368d3e5` done, but push to `origin/develop` rejected by branch protection (9 required checks, none run); PR #149 open/BEHIND with 0 checks. User asked to stay in this repo, so jobs remain on `*/docs/product-proposals-phase-26`. Do not switch jobs until the Jenkinsfiles are on remote `develop` | CI/CD |
 | J11 | Fix the release APK's Dart `File::Copy` EINTR abort | `JobTrigger-release-CD` #5 and #6 both abort in `compileFlutterBuildRelease` with `file_linux.cc: 492: Unexpected EINTR errno` (Dart 3.13.7, exit 134) under the amd64/qemu Flutter image — reproducible, not memory-related. Debug APK passes. Investigate a Dart/Flutter workaround or an amd64-native agent; re-run the release build when fixed | CI/CD |
 | J12 | Configure the SonarQube → Jenkins webhook | No webhook is configured for project `JobTrigger`, so `waitForQualityGate()` polls for 5 min and times out; backend #6 ended ABORTED even though the analysis succeeded and the gate is `OK`. Add a project/global webhook pointing at Jenkins' `/sonarqube-webhook/`, then re-run a backend build with Sonar on | CI/CD |
 

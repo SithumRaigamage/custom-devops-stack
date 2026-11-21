@@ -44,3 +44,19 @@
 - Six job configs show `<name>*/develop</name>`.
 - A smoke build from `develop` passes with `SEND_EMAIL=false`.
 - No secrets printed or committed.
+
+## Interim outcome (2026-11-21) — BLOCKED
+- With approval, the merge was performed locally in the JobTrigger worktree:
+  `develop` now has merge commit `368d3e5` (clean `ort` merge, all six
+  Jenkinsfiles present). The feature branch and the original checkout are
+  untouched.
+- Pushing `develop` to `origin` was **rejected** by GitHub branch protection
+  (`GH006`): 9 required status checks (`analyze-and-test`, `build-android`,
+  `build-ios`, `test (22.x)`, `web`, `secrets`, `dependencies`,
+  `backend-image`, `manifest`). Existing PR #149 is open, mergeable but
+  `BEHIND`, with **0** reported checks and no workflow runs on the branch.
+- User asked to stop work in the JobTrigger repo and keep this session in
+  `custom-devops-stack`. Decision: leave J10 **open/blocked**; do **not** switch
+  the six Jenkins jobs to `*/develop` because the Jenkinsfiles are not on the
+  remote `develop`. The local merge commit remains unpushed (no push, force-push,
+  or branch-protection change was made).

@@ -24,6 +24,7 @@ Restore from backups/<timestamp>/ (stop the service first unless noted):
   Jenkins       make down S=jenkins
                 tar -xzf jenkins_home.tar.gz -C jenkins/        # recreates jenkins/jenkins_home
                 make up S=jenkins
+                Note: workspaces and build caches are excluded; the next build recreates them.
 
   SonarQube DB  make up S=sonarqube   (DB must run; stop the sonarqube container itself)
                 docker stop sonarqube
@@ -34,6 +35,7 @@ Restore from backups/<timestamp>/ (stop the service first unless noted):
   Postgres      gunzip -c stack-postgres.sql.gz | docker exec -i stack-postgres psql -U postgres
 
   Dashboard DB  gunzip -c stackpilot.sql.gz | docker exec -i stackpilot-postgres psql -U stackpilot -d stackpilot
+                Note: restore into an empty database (the dump does not drop tables first).
 
   MongoDB       docker exec -i stack-mongodb mongorestore --archive --gzip --drop < mongodb.archive.gz
 

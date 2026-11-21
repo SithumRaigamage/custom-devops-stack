@@ -99,6 +99,24 @@ Notable changes to the stack. Newest first. Commit history has the details.
   of the new findings. `make scan-images` still runs and reports the other
   images as before.
 
+- **J4 — Verify the Android builds** (`a172f04`, `e04be23` design notes;
+  `752e11a` in JobTrigger): ran both Android jobs sequentially on
+  `BRANCH=docs/product-proposals-phase-26`. Frontend #3 (on `develop`) hung in
+  `build_runner` with all outputs cached (both Dart processes in `futex_do_wait`,
+  21 min of no output); aborted and removed the leaked container. Frontend #4
+  cleared the stale `.dart_tool/build` cache, got through code generation in 29 s
+  and reached `assembleDebug`, but Docker OOM-killed the container after 908.7 s
+  (Gradle plus two Kotlin daemons, each `-Xmx3g`, versus ~10.6 GB Docker). Fix:
+  capped Gradle at `-Xmx2g -XX:MaxMetaspaceSize=768m` and added
+  `kotlin.daemon.jvmargs=-Xmx1g` in the identical `flutter()` helper of all six
+  JobTrigger Jenkinsfiles (all six hashes verified equal), committed and pushed
+  with approval. **Debug APK: PASS** — `JobTrigger-frontend-CI #5` built and
+  archived `app-debug.apk` (187 MB, sha256 `ee9f2e2c…90b`) in 966536 ms with no
+  OOM. **Release APK: FAIL** — `JobTrigger-release-CD` #5 and retry #6 abort in
+  `compileFlutterBuildRelease` with Dart's `Unexpected EINTR errno` in
+  `File::Copy` (exit 134/SIGABRT); no OOM event, reproducible under qemu/amd64.
+  J4 closes as verified-with-finding; the release crash is tracked as **J11**.
+
 ## 2026-11-14
 
 ### New services

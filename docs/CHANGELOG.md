@@ -142,6 +142,13 @@ Notable changes to the stack. Newest first. Commit history has the details.
   768m/768m/1G) and by successful pipeline runs this session. The unrelated
   `.DS_Store` modification was left alone.
 
+- **J7 — Executors 2 → 3** (`0b0797e` design note; no source changes): set
+  `Jenkins.instance.numExecutors` to 3 through the authenticated Script Console
+  and saved, so a quick job can run beside the two heavy Flutter jobs. Kept below
+  4 because two Flutter builds plus SonarQube already fill Docker's ~10.6 GB.
+  Verified `config.xml` now has `<numExecutors>3</numExecutors>`, `/login` returns
+  200, and the Jenkins log has no new errors. No containers were restarted.
+
 ## 2026-11-14
 
 ### New services

@@ -14,7 +14,6 @@ Docker Desktop was stopped at the end of the session; start it first.
 
 | # | Item | Why / notes | Area |
 |---|---|---|---|
-| J3 | Rebuild and restart Jenkins | `docker compose build && docker compose up -d` in `jenkins/` after J1/J2; jobs and settings persist in `jenkins_home` | CI/CD |
 | J4 | Verify the Android builds | Frontend "Build Debug APK" and release "Build Android APK" have not run since the Gradle fixes (`af4ac91` heap cap, `f42feaf` `GRADLE_USER_HOME`); both earlier runs were aborted. Run them **one at a time** (each Flutter build takes ~4.5 GB) | CI/CD |
 | J5 | Regenerate `sonarqube-token` | SonarQube returns 401 for the stored token, so every job's Sonar stage fails (backend #5). New token in SonarQube → update the `sonarqube-token` credential in Jenkins (same ID), then re-run backend with Sonar on. Ties in with #14 | Security |
 | J6 | Commit the stack's Jenkins/SonarQube changes | Uncommitted on `feat/dashboard`: `jenkins/CI.JenkinsFile` (template now compiles; `--volumes-from` mounts; `sonar.token`; semgrep fix), `jenkins/README.md`, `jenkins/PIPELINE_TEMPLATE.md`, `sonarqube/docker-compose.yml` (heaps 768M/768M/1G: at 1G/1G/2G Elasticsearch was killed, exit 137) | Docs |

@@ -85,6 +85,19 @@ Notable changes to the stack. Newest first. Commit history has the details.
   The build exposed and fixed two bugs: gitleaks assets use `linux_arm64` (not
   `linux-arm64`) and hadolint requires `-` for stdin. No service was restarted;
   rebuilding/restarting Jenkins is J3.
+- **J3 — Rebuild and restart Jenkins** (`29bd318`, design note; no tracked source
+  changes): rebuilt `custom-jenkins:latest` with `docker build --pull` from the
+  J2 Dockerfile, re-saved `images/custom-jenkins_latest.tar` (447 MB, tar listing
+  valid) so the offline cache matches the live tag, and started Jenkins via
+  `scripts/stack.sh up jenkins`. Verified: HTTP 200 on `/login`, "Jenkins is fully
+  up and running" in the log, all six scanners plus `python3` report the pinned
+  versions inside the running container, and `jenkins_home` still has 37 job
+  configs and 193 plugin dirs. The local scratch tag `custom-jenkins:j2-test`
+  was retained. **Risk:** `make scan-images` now reports `custom-jenkins:latest`
+  at **7 CRITICAL / 151 HIGH** fixable (was 1/41 after P1 #1); the added scanner
+  toolchain (semgrep's Python venv and Go-based scanner binaries) brought in most
+  of the new findings. `make scan-images` still runs and reports the other
+  images as before.
 
 ## 2026-11-14
 

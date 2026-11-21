@@ -35,5 +35,5 @@ Notable changes to the stack. Newest first. Commit history has the details.
 - `observability/` creates `devops-network` if missing, so it starts on its own.
 
 ### Docs
-- `backlog.md`: all remaining development, prioritised.
+- `docs/backlog.md`: all remaining development, prioritised.
 - README quick start, monitoring, scanning and backup sections; port table; roadmap statuses; this changelog.

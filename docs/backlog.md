@@ -1,8 +1,8 @@
 # Backlog
 
 Remaining development for the custom DevOps stack and the StackPilot dashboard.
-Done work is in `CHANGELOG.md`. Priorities: **P1** next, **P2** soon, **P3** later.
-Move an item to `CHANGELOG.md` when it's finished.
+Done work is in `docs/CHANGELOG.md`. Priorities: **P1** next, **P2** soon, **P3** later.
+Move an item to `docs/CHANGELOG.md` when it's finished.
 
 ## P1 — Next
 
@@ -11,7 +11,7 @@ Move an item to `CHANGELOG.md` when it's finished.
 | 1 | Apply image vulnerability fixes | `docker build --pull -t custom-jenkins:latest jenkins` (gosu 1.19), re-save `images/custom-jenkins_latest.tar`, pull fresh `postgres:15-alpine`, `postgres:16-alpine`, `mongo:7`, `open-webui:main`, then `make scan` and compare with the 12 Nov baseline | Security |
 | 2 | Bump SonarQube | Pinned `26.1.0.118079` carries 7 critical Java library CVEs; move to the latest 26.x, update `sonarqube/docker-compose.yml`, `scripts/stack.sh` (`IMAGE_TARS`), `scripts/scan.sh` and the image tar | Security |
 | 3 | Test a restore | Follow `make restore-help` on a copy (Jenkins archive, dashboard DB dump). An unrestored backup is unproven | Backup |
-| 4 | Dependency audit | `cd dashboard && pnpm audit --audit-level high`, fix high/critical, close the last item in `audit-plan.md` | Dashboard |
+| 4 | Dependency audit | `cd dashboard && pnpm audit --audit-level high`, fix high/critical, close the last item in `docs/audit-plan.md` | Dashboard |
 | 5 | Run the full API test suite | `pnpm --filter api test` (includes the new audit and log tests) | Dashboard |
 
 ## Jenkins — continue next (added 2026-11-19)

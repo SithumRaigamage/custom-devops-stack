@@ -8,7 +8,6 @@ Move an item to `docs/CHANGELOG.md` when it's finished.
 
 | # | Item | Why / notes | Area |
 |---|---|---|---|
-| 3 | Test a restore | Follow `make restore-help` on a copy (Jenkins archive, dashboard DB dump). An unrestored backup is unproven | Backup |
 | 4 | Dependency audit | `cd dashboard && pnpm audit --audit-level high`, fix high/critical, close the last item in `docs/audit-plan.md` | Dashboard |
 | 5 | Run the full API test suite | `pnpm --filter api test` (includes the new audit and log tests) | Dashboard |
 

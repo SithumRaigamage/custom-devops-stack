@@ -31,6 +31,19 @@ Notable changes to the stack. Newest first. Commit history has the details.
   "SonarQube is operational". Note: `dashboard/services.yaml.bak` still contains
   the old tag for historical reasons; it is a backup artifact, not live config.
 
+### Backup
+- **P1 #3 — Test a restore** (`4ec551d`): proved both restore paths on copies without
+  touching live data. `SHA256SUMS` passed for both archives. Extracted
+  `20261121-163059/jenkins_home.tar.gz` to a scratch dir: `config.xml`,
+  `credentials.xml`, 37 job configs (matches live), 193 plugin dirs (matches live),
+  12 build-history dirs, and both key XML files parse. Restored
+  `20261112-124004/stackpilot.sql.gz` into a disposable Postgres 16 container:
+  12 public tables with data (`services=5`, `users=2`, `activity=112`,
+  `status_samples=1091`, etc.). A second restore into the same DB failed with
+  "relation already exists", confirming the dump needs an empty target — added
+  that warning and a Jenkins exclusions note to `make restore-help`. Scratch dir
+  and scratch container were removed; live `make status` and `jenkins_home` unchanged.
+
 ## 2026-11-14
 
 ### New services

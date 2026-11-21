@@ -14,7 +14,6 @@ Docker Desktop was stopped at the end of the session; start it first.
 
 | # | Item | Why / notes | Area |
 |---|---|---|---|
-| J2 | Install scanners in the Jenkins image | In `jenkins/Dockerfile`, like Trivy (pinned, checksum-verified, arm64 + amd64): gitleaks 8.30.1, osv-scanner 2.7.0, syft, hadolint 2.12.0, semgrep 1.185.0 (Python venv), `python3`. Then switch `CI.JenkinsFile` and the JobTrigger security/tools stages from `docker run <image>` to the agent binaries. Flutter/Android stay in their amd64 image (Android tools are x86-only on Linux); Playwright stays in its image | CI/CD |
 | J3 | Rebuild and restart Jenkins | `docker compose build && docker compose up -d` in `jenkins/` after J1/J2; jobs and settings persist in `jenkins_home` | CI/CD |
 | J4 | Verify the Android builds | Frontend "Build Debug APK" and release "Build Android APK" have not run since the Gradle fixes (`af4ac91` heap cap, `f42feaf` `GRADLE_USER_HOME`); both earlier runs were aborted. Run them **one at a time** (each Flutter build takes ~4.5 GB) | CI/CD |
 | J5 | Regenerate `sonarqube-token` | SonarQube returns 401 for the stored token, so every job's Sonar stage fails (backend #5). New token in SonarQube → update the `sonarqube-token` credential in Jenkins (same ID), then re-run backend with Sonar on. Ties in with #14 | Security |

@@ -70,6 +70,21 @@ Notable changes to the stack. Newest first. Commit history has the details.
   the existing image resolves `ndk;28.2.13676358`; and a throwaway container
   proved `sdkmanager` installs that NDK (licences already accepted). Did not
   rebuild the image tag or the Jenkins container — that is J3.
+- **J2 — Install scanners in the Jenkins image** (`8757da9` in this repo,
+  `b01d38c` in JobTrigger): added pinned, checksum-verified, arm64+amd64 installs
+  to `jenkins/Dockerfile` — gitleaks 8.30.1, osv-scanner 2.7.0, syft 1.4.1,
+  hadolint 2.12.0, and semgrep 1.185.0 in a `/opt/semgrep` Python venv (plus
+  `python3`/`python3-venv`). Switched `jenkins/CI.JenkinsFile` and JobTrigger's
+  security/backend stages from `docker run`/`dockerTool` scanner images to the
+  agent binaries (Trivy fs now uses `misconfig`, and hadolint needs an explicit
+  `-` to read stdin). Non-scanner `docker run` calls (Python, Go, .NET, cosign,
+  Playwright) and the Flutter image are unchanged. Verified by building a
+  scratch `custom-jenkins:j2-test`: all upstream `sha256sum -c` checks printed
+  `OK`, all six `--version` calls matched the pins, and the exact gitleaks,
+  syft, hadolint, trivy, osv-scanner and semgrep command forms ran successfully.
+  The build exposed and fixed two bugs: gitleaks assets use `linux_arm64` (not
+  `linux-arm64`) and hadolint requires `-` for stdin. No service was restarted;
+  rebuilding/restarting Jenkins is J3.
 
 ## 2026-11-14
 

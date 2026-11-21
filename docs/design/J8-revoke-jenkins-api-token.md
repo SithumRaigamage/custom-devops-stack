@@ -31,3 +31,11 @@
 - Jenkins `/login` still returns 200 and the signed-in browser session still
   works.
 - No token value appears in docs, commit, or report.
+
+## Final outcome (2026-11-21)
+- With approval, revoked the `jobTrigger` token via the Jenkins API-token store's
+  `revokeToken(uuid)` through the authenticated Script Console. Store count went
+  1 → 0; the user was saved explicitly so Jenkins flushed the change to disk.
+- Verified on disk: `<tokenList/>` is empty and the token's uuid no longer
+  appears in the user config. `/login` still returns 200 and all containers are
+  unchanged. No replacement token was generated.

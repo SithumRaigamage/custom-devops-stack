@@ -15,7 +15,6 @@ session; start it first if the containers are down.
 
 | # | Item | Why / notes | Area |
 |---|---|---|---|
-| J8 | Revoke the temporary Jenkins API token | It was shared during the session; create a new one when needed | Security |
 | J9 | Optional JobTrigger setup | `CI_RECEIVER_EMAIL` global property (email receiver), `codecov-token` credential (enables `UPLOAD_CODECOV`), a `macos` agent (enables `BUILD_IOS`), and a decision on `trivy fs` license findings (LGPL-3.0 in JobTrigger-Web, marks security UNSTABLE) | CI/CD |
 | J10 | Merge the JobTrigger `Jenkins/` folder to `develop` | Jobs build from `docs/product-proposals-phase-26`; after the merge, switch each job's branch to `*/develop` | CI/CD |
 | J11 | Fix the release APK's Dart `File::Copy` EINTR abort | `JobTrigger-release-CD` #5 and #6 both abort in `compileFlutterBuildRelease` with `file_linux.cc: 492: Unexpected EINTR errno` (Dart 3.13.7, exit 134) under the amd64/qemu Flutter image — reproducible, not memory-related. Debug APK passes. Investigate a Dart/Flutter workaround or an amd64-native agent; re-run the release build when fixed | CI/CD |

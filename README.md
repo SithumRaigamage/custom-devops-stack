@@ -387,7 +387,7 @@ stack's local `mongod` defaults to 27018 instead.
 ## 📝 What's Next
 
 All remaining development is in **`docs/backlog.md`** (P1 → P3). Finished work is logged in `docs/CHANGELOG.md`.
-Top of the list: the Jenkins backlog (J8–J12), then P2 (nightly backups, Jenkins metrics, Grafana alerts).
+Top of the list: the Jenkins backlog (J9–J12), then P2 (nightly backups, Jenkins metrics, Grafana alerts).
 
 ## 📚 Additional Resources
 

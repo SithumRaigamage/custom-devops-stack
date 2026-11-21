@@ -149,6 +149,16 @@ Notable changes to the stack. Newest first. Commit history has the details.
   Verified `config.xml` now has `<numExecutors>3</numExecutors>`, `/login` returns
   200, and the Jenkins log has no new errors. No containers were restarted.
 
+- **J8 — Revoke the shared Jenkins API token** (`296b3c8` design note; no source
+  changes): revoked the single API token named `jobTrigger` on user
+  'Sithum Raigamage' (created 2026-10-28, expired 2026-11-27, last used
+  2026-11-19) with approval, via the Jenkins API-token store's `revokeToken(uuid)`
+  in the authenticated Script Console. No value was printed. Explicitly saved
+  the user so the change persisted: on-disk `<tokenList/>` is empty and the uuid
+  is gone. No replacement token was generated (create one when needed). The
+  dashboard's Jenkins token setting is only the example placeholder, so nothing
+  live depended on it. `/login` still returns 200.
+
 ## 2026-11-14
 
 ### New services

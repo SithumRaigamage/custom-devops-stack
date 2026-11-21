@@ -21,7 +21,7 @@ description: Operate the local SonarQube service, including first start, token a
 1. Never print `SONAR_TOKEN`, `SONARQUBE_DB_PASSWORD`, or any admin password. Refer to keys/IDs only.
 2. Real values live in gitignored `sonarqube/.env`; templates contain placeholders only.
 3. Use `make up S=sonarqube` / `make down S=sonarqube` / `make logs S=sonarqube` for control. SonarQube depends on `sonarqube-db`.
-4. Treat `sonarqube/README.md:22,33,43` as stale (old image `10.8.0-community`, hard-coded path, literal example password). The compose image is `sonarqube:26.1.0.118079-community` and the password comes from `.env`.
+4. The compose image is `sonarqube:26.11.0.134175-community` and the password comes from gitignored `.env`. `sonarqube/README.md` was corrected on 2026-11-21 (real image tag, no literal password, repo-local path); verify before assuming drift.
 5. Current heaps are deliberately reduced (web 768m, CE 768m, search 1G). Do not raise them back to 1G+1G+2G — that caused exit 137 OOM kills.
 6. Rotating tokens/passwords and resetting data are approval-gated.
 

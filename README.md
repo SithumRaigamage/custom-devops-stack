@@ -409,7 +409,7 @@ Top of the list: bump SonarQube, test a restore, run `pnpm audit` in `dashboard/
 - ✅ All data persists in `./jenkins_home` on your machine
 
 ### SonarQube
-- ✅ Running `sonarqube:26.1.0.118079-community`
+- ✅ Running `sonarqube:26.11.0.134175-community`
 - ✅ Added PostgreSQL database (production-ready)
 - ✅ DB password moved out of the committed `docker-compose.yml` into gitignored `sonarqube/.env`
 - ✅ Removed unused volume definitions

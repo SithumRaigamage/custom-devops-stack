@@ -22,7 +22,7 @@ SEVERITY="${SEVERITY:-HIGH,CRITICAL}"
 # Images that make up the stack (kept in sync with scripts/stack.sh).
 STACK_IMAGES=(
   "custom-jenkins:latest"
-  "sonarqube:26.1.0.118079-community"
+  "sonarqube:26.11.0.134175-community"
   "postgres:15-alpine"
   "postgres:16-alpine"
   "mongo:7"

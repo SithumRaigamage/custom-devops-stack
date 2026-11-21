@@ -34,7 +34,7 @@ DEFAULT_UP=(dashboard-db jenkins sonarqube)
 # so a `docker system prune -a` doesn't force a re-download.
 IMAGE_TARS=(
   "custom-jenkins:latest|images/custom-jenkins_latest.tar"
-  "sonarqube:26.1.0.118079-community|images/sonarqube_26.1.0.118079-community.tar"
+  "sonarqube:26.11.0.134175-community|images/sonarqube_26.11.0.134175-community.tar"
   "postgres:15-alpine|images/postgres_15-alpine.tar"
   "ghcr.io/open-webui/open-webui:main|open-webui/backup/open-webui-image.tar"
 )

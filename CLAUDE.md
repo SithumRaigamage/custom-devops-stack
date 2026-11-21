@@ -23,9 +23,9 @@ nothing is intentionally internet-exposed. Treat the repository, its compose fil
 - Documentation may drift. Prefer executable files over README prose. Known stale text:
   - README/docs claim Jenkins and SonarQube bind to `127.0.0.1`, but their compose files
     default `JENKINS_BIND`/`SONAR_BIND` to `0.0.0.0`. Verify actual config before claims.
-  - `sonarqube/README.md` shows an old image tag, hard-coded path, and literal example
-    password; the compose file pins `sonarqube:26.1.0.118079-community` and reads the
-    password from gitignored `.env`.
+  - `sonarqube/README.md` was corrected on 2026-11-21 (it had an old image tag,
+    hard-coded path, and literal example password); the compose file pins
+    `sonarqube:26.11.0.134175-community` and reads the password from gitignored `.env`.
   - `dashboard/README.md:8-12` still references `~/.zshrc` functions; the DB-backed
     service registry under Settings is authoritative.
 

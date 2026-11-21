@@ -1,31 +1,10 @@
 import { homedir } from "node:os";
 import { pool } from "./db.js";
+import type { IntegrationKind, Service, ServiceType } from "./service-model.js";
 
-export type ServiceType = "compose" | "custom";
-export type IntegrationKind = "none" | "jenkins" | "sonarqube" | "ollama" | "generic_http";
-export const INTEGRATION_KINDS: readonly IntegrationKind[] = ["none", "jenkins", "sonarqube", "ollama", "generic_http"];
-
-export interface Service {
-  id: string;
-  name: string;
-  desc?: string;
-  image?: string;
-  type: ServiceType;
-  folder: string;
-  workingDir: string;
-  composeFile: string;
-  url: string;
-  health: string;
-  port?: number;
-  icon?: string;
-  startCommand?: string;
-  stopCommand?: string;
-  restartCommand?: string;
-  logsCommand?: string;
-  runInShell: boolean;
-  integration: IntegrationKind;
-  sortOrder: number;
-}
+// The model types live in a DB-free module; re-exported for existing importers.
+export type { IntegrationKind, Service, ServiceType } from "./service-model.js";
+export { INTEGRATION_KINDS } from "./service-model.js";
 
 let cachedServices: Service[] = [];
 

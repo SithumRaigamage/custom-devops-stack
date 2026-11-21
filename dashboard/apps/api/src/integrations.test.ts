@@ -3,13 +3,13 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
 
-// The module needs a session secret at call time only; set it before import for the DB-free helpers.
+// Pure helpers only: these modules have no database imports, so this suite runs without PostgreSQL.
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret-1234";
-process.env.DATABASE_URL ??= "postgres://stackpilot:stackpilot@127.0.0.1:5432/stackpilot";
 
+const { decryptSecret, encryptSecret } = await import("./credentials.js");
 const {
-  decryptSecret, describeFetchError, encryptSecret, normalizeBaseUrl, statusMessage, testConnection,
-} = await import("./integrations.js");
+  describeFetchError, normalizeBaseUrl, statusMessage, testConnection,
+} = await import("./integration-probe.js");
 
 const SECRET = "x".repeat(40);
 

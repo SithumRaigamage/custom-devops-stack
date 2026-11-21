@@ -6,7 +6,9 @@
     "dev": "concurrently --kill-others-on-fail --kill-timeout 10000 -n api,web -c blue,green \"pnpm --filter api dev\" \"pnpm --filter web dev\"",
     "build": "pnpm --filter api build && pnpm --filter web build",
     "typecheck": "pnpm --filter api typecheck && pnpm --filter web typecheck",
-    "test": "pnpm --filter api test"
+    "test": "pnpm --filter api test",
+    "test:db": "pnpm --filter api test:db",
+    "test:all": "pnpm --filter api test:all"
   },
   "devDependencies": {
     "concurrently": "^9.0.0"

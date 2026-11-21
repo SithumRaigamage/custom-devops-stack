@@ -8,7 +8,9 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/compose.test.ts src/status.test.ts src/integrations.test.ts src/registry.test.ts src/audit.test.ts src/logs.test.ts"
+    "test": "node --import tsx --test src/compose.test.ts src/status.test.ts src/integrations.test.ts src/registry.test.ts src/audit.test.ts src/logs.test.ts",
+    "test:db": "node --import tsx --test src/persistence.db.test.ts",
+    "test:all": "pnpm test && pnpm test:db"
   },
   "dependencies": {
     "@fastify/helmet": "^13.0.1",

@@ -3,7 +3,8 @@ import test from "node:test";
 
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret-1234";
 
-const { ServiceInputSchema } = await import("./registry.js");
+// The schema lives in a DB-free module, so this suite runs without PostgreSQL.
+const { ServiceInputSchema } = await import("./service-schema.js");
 const { commandInvocation, describeInvocation } = await import("./compose.js");
 
 const base = { name: "App", folder: "app", port: 3000, url: "http://127.0.0.1:3000" };

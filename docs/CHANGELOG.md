@@ -2,6 +2,22 @@
 
 Notable changes to the stack. Newest first. Commit history has the details.
 
+## 2026-11-21
+
+### Security
+- **P1 #1 — Image vulnerability fixes** (`aeaf624`): rebuilt `custom-jenkins:latest` with
+  `docker build --pull` (gosu 1.19 verified in the image), re-saved the local
+  `images/custom-jenkins_latest.tar` (git-ignored), and pulled fresh
+  `postgres:15-alpine`, `postgres:16-alpine`, `mongo:7` and
+  `ghcr.io/open-webui/open-webui:main`. `make scan` was clean for secrets (Gitleaks,
+  78 commits) and reported these fixable HIGH/CRITICAL totals versus the 12 Nov
+  baseline: custom-jenkins 1/42 → 1/41, postgres:15 1/43 → 1/26, postgres:16
+  1/43 → 1/26, mongo:7 1/36 → 1/36 (unchanged), open-webui 4/28 → **5/54 (worse)**.
+  The comparison is approximate — Trivy's vulnerability DB is live, so the 12 Nov
+  baseline used an older snapshot. SonarQube 7/102 is unchanged (separate item #2).
+  Images without a 12 Nov report: umami 9/70, mailpit 2/72, glitchtip 10/189.
+  open-webui is a floating `:main` tag; pinning it is backlog P2 #17.
+
 ## 2026-11-14
 
 ### New services

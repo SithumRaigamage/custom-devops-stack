@@ -42,3 +42,18 @@ inspecting the current state, you chose:
   `<globalNodeProperties><EnvironmentVariablesNodeProperty><envVars>`.
 - `/login` returns 200; no new errors in the Jenkins log; containers unchanged.
 - No secret values are printed or committed; no source branches pushed.
+
+## Final outcome (2026-11-21)
+- Added `CI_RECEIVER_EMAIL` (user-supplied address) as a Jenkins global
+  environment property via the authenticated Script Console, using
+  `EnvironmentVariablesNodeProperty` and `Jenkins.save()`. No value was printed
+  in the result or written to a tracked file.
+- Verification: read-only console check → `present=true configured=true
+  length=30`; gitignored `jenkins_home/config.xml` now has a
+  `<globalNodeProperties>` entry with the key and value; `/login` → 200; no new
+  Jenkins log errors; all three containers unchanged.
+- `codecov-token` and the `macos` agent remain deliberately unset; their
+  parameters (`UPLOAD_CODECOV`, `BUILD_IOS`) stay off by default. No JobTrigger
+  source files were edited and nothing was pushed.
+- The Trivy LGPL-3.0 finding is accepted as an informational `UNSTABLE` stage;
+  security build #4 is `SUCCESS`. No scanner/ignore changes were made.

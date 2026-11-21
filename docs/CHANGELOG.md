@@ -159,6 +159,19 @@ Notable changes to the stack. Newest first. Commit history has the details.
   dashboard's Jenkins token setting is only the example placeholder, so nothing
   live depended on it. `/login` still returns 200.
 
+- **J9 — Optional JobTrigger setup** (`a16cd7b` design note; runtime config only):
+  you chose to set a dedicated `CI_RECEIVER_EMAIL`, so it was added as a Jenkins
+  global environment property through the authenticated Script Console and saved
+  (value kept only in gitignored `jenkins_home/config.xml`, never in committed
+  docs or chat output). Verified read-only in Jenkins (`present=true
+  configured=true`), on disk, and by `/login` → 200; no containers restarted.
+  The other three sub-items were decided as: defer `codecov-token` /
+  `UPLOAD_CODECOV` (off by default, no token available), defer the `macos` agent
+  / `BUILD_IOS` (off by default, no agents configured), and accept/document the
+  `trivy fs` LGPL-3.0 `sharp`/`libvips` findings — security build #4 is
+  `SUCCESS`, only that stage is `UNSTABLE`, and the scanner remains unchanged so
+  the signal stays visible. No JobTrigger source edits or pushes.
+
 ## 2026-11-14
 
 ### New services

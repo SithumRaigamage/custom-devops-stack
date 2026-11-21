@@ -1,6 +1,6 @@
 # API Hardening Audit Plan
 
-**Status: complete (12 Nov 2026).** Scope: `dashboard/apps/api` (Fastify) and the Settings page in `dashboard/apps/web`.
+**Status: complete (last item closed 21 Nov 2026).** Scope: `dashboard/apps/api` (Fastify) and the Settings page in `dashboard/apps/web`.
 
 | Requirement | Status | Where |
 |---|---|---|
@@ -20,6 +20,6 @@
 | Audit entry per state change | ✅ | `audit.ts` hooks + `audit-rules.ts` (one rule per mutating route, success and failure, never secret values) |
 | Filterable audit API | ✅ | `GET /api/activity` (kind/actor/service/source/outcome/from/to/q, cursor paging), `GET /api/activity/facets` |
 | Audit tab on Settings page | ✅ | `components/AuditLog.tsx`, `/settings?tab=audit`, CSV export |
-| pnpm audit fix high/critical | ⏳ | Run on the Mac (needs network): `pnpm audit --audit-level high`, then `pnpm audit --fix` |
+| pnpm audit fix high/critical | ✅ | `pnpm audit --audit-level high` run 21 Nov 2026: exit 0, no HIGH/CRITICAL advisories, so no fixes were needed. One moderate advisory remains — esbuild ≤0.24.2 via the `drizzle-kit` dev dependency (dev-server only, GHSA-67mh-4wv8-2f99). Accepted as out of scope; re-check on the next dependency pass. |
 
 Tests: `src/audit.test.ts` covers the rules (no secrets in messages, failure wording, clipping) and the SQL filter builder (parameter binding, LIKE escaping).

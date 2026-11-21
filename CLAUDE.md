@@ -77,6 +77,22 @@ repositories, symlinks, permissions, and project boundaries.
   primary worktree; the skills work uses its own worktree/branch `chore/claude-skills`.
 - Do not silently resolve conflicts, force-push, or amend another author's commits.
 
+## Development workflow (mandatory)
+
+Every change follows three steps, in order:
+
+1. **Design:** before writing code, write or update a short design note in `docs/` (what
+   will change, which files, how it will be verified). For small items, a few lines under
+   the item in `docs/backlog.md` is enough.
+2. **Develop:** make the change, verify it (run tests, scans, or the service itself), and
+   commit it.
+3. **Document:** in the same commit or the one right after, move the finished item from
+   `docs/backlog.md` to `docs/CHANGELOG.md` (date, what was done, commit hash), and update
+   any doc it affects (`README`, `CURRENT_STATE.md`, `audit-plan.md`, roadmaps). An item is
+   not done until the docs say so.
+
+`docs/backlog.md` must only ever contain work that is actually still open.
+
 ## Skills index (trigger phrases)
 
 | Skill | Plain-English trigger |

@@ -50,6 +50,10 @@ Notable changes to the stack. Newest first. Commit history has the details.
   package installs were needed. One moderate advisory remains (esbuild ≤0.24.2 via
   the `drizzle-kit` dev dependency, dev-server only, GHSA-67mh-4wv8-2f99); accepted
   as out of scope and noted in `docs/audit-plan.md`, which is now fully complete.
+- **P1 #5 — Full API test suite** (`d5b8bdd`): ran `pnpm --filter api test` —
+  6 test files (`compose`, `status`, `integrations`, `registry`, `audit`, `logs`),
+  23/23 passing, 0 failures. No source changes were needed. This completes P1;
+  the backlog now starts at the Jenkins items.
 
 ## 2026-11-14
 

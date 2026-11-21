@@ -4,12 +4,6 @@ Remaining development for the custom DevOps stack and the StackPilot dashboard.
 Done work is in `docs/CHANGELOG.md`. Priorities: **P1** next, **P2** soon, **P3** later.
 Move an item to `docs/CHANGELOG.md` when it's finished.
 
-## P1 — Next
-
-| # | Item | Why / notes | Area |
-|---|---|---|---|
-| 5 | Run the full API test suite | `pnpm --filter api test` (includes the new audit and log tests) | Dashboard |
-
 ## Jenkins — continue next (added 2026-11-19)
 
 Context: the `Projects/JobTrigger` jobs (backend, frontend, website, security, tools CI;

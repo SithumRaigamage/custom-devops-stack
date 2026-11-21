@@ -29,3 +29,23 @@
 - If a build fails, capture the failing stage and log line, then open a follow-up
   backlog item rather than guessing a fix in this item.
 - No service is stopped or removed; no secrets printed or committed.
+
+## Observed results and follow-up fix (2026-11-21)
+- Build #3 (`BRANCH=develop`) hung in `dart run build_runner` when all outputs
+  were cached/skipped: both Dart processes in `futex_do_wait`, no output for
+  21 min. Aborted; the leaked build container was stopped and removed.
+- Build #4 (`BRANCH=docs/product-proposals-phase-26`, stale
+  `JobTrigger-Frontend/.dart_tool/build` cache deleted first) got past code
+  generation in 29 s, downloaded the NDK, installed SDK platforms, and reached
+  `flutter build apk --debug` → `assembleDebug`. After 908.7 s Docker OOM-killed
+  the container (`oom` event on `youthful_taussig`): Gradle (`-Xmx3g`) plus two
+  Kotlin daemons (`-Xmx3g` each) exceeded the ~10.6 GB Docker limit. Result FAILURE.
+- Fix to apply in JobTrigger's `docs/product-proposals-phase-26` worktree: in
+  the `flutter()` helper's generated `~/.gradle/gradle.properties`, lower Gradle
+  to `org.gradle.jvmargs=-Xmx2g -XX:MaxMetaspaceSize=768m
+  -XX:+HeapDumpOnOutOfMemoryError` and add `kotlin.daemon.jvmargs=-Xmx1g` so the
+  two Kotlin daemons are capped too. All **six** helpers (backend, frontend,
+  release, security, tools, website) must stay byte-identical, per J1.
+- Pushing the feature branch to GitHub is required for Jenkins to fetch the fix;
+  that is a separate, explicit approval gate. Retry both builds afterwards with
+  `SEND_EMAIL=false` to avoid duplicate failure emails.

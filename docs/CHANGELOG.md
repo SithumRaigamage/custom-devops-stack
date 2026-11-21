@@ -55,6 +55,123 @@ Notable changes to the stack. Newest first. Commit history has the details.
   23/23 passing, 0 failures. No source changes were needed. This completes P1;
   the backlog now starts at the Jenkins items.
 
+### Jenkins
+- **J1 — Bake the Android NDK into `jobtrigger-flutter`** (`ed7cc78`, JobTrigger
+  repo, branch `docs/product-proposals-phase-26`): added an NDK install to the
+  identical `buildFlutterImage()` helper in all six JobTrigger Jenkinsfiles
+  (`backend`, `frontend`, `release`, `security`, `tools`, `website`) so the six
+  copies stay in sync and the shared `jobtrigger-flutter:3.47.8` tag keeps the
+  same meaning. The version is read at Docker build time from the checked-out
+  Flutter SDK's `packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt`
+  (`val ndkVersion`) via `sed | head -1 | xargs -r sdkmanager`, instead of being
+  hardcoded, and a `find …/ndk | grep -q .` guard fails the layer if no NDK
+  landed. Verified: all six helper bodies hash identically; the generated
+  Dockerfile expands `$FLUTTER_VERSION` correctly; the extraction command in
+  the existing image resolves `ndk;28.2.13676358`; and a throwaway container
+  proved `sdkmanager` installs that NDK (licences already accepted). Did not
+  rebuild the image tag or the Jenkins container — that is J3.
+- **J2 — Install scanners in the Jenkins image** (`8757da9` in this repo,
+  `b01d38c` in JobTrigger): added pinned, checksum-verified, arm64+amd64 installs
+  to `jenkins/Dockerfile` — gitleaks 8.30.1, osv-scanner 2.7.0, syft 1.4.1,
+  hadolint 2.12.0, and semgrep 1.185.0 in a `/opt/semgrep` Python venv (plus
+  `python3`/`python3-venv`). Switched `jenkins/CI.JenkinsFile` and JobTrigger's
+  security/backend stages from `docker run`/`dockerTool` scanner images to the
+  agent binaries (Trivy fs now uses `misconfig`, and hadolint needs an explicit
+  `-` to read stdin). Non-scanner `docker run` calls (Python, Go, .NET, cosign,
+  Playwright) and the Flutter image are unchanged. Verified by building a
+  scratch `custom-jenkins:j2-test`: all upstream `sha256sum -c` checks printed
+  `OK`, all six `--version` calls matched the pins, and the exact gitleaks,
+  syft, hadolint, trivy, osv-scanner and semgrep command forms ran successfully.
+  The build exposed and fixed two bugs: gitleaks assets use `linux_arm64` (not
+  `linux-arm64`) and hadolint requires `-` for stdin. No service was restarted;
+  rebuilding/restarting Jenkins is J3.
+- **J3 — Rebuild and restart Jenkins** (`29bd318`, design note; no tracked source
+  changes): rebuilt `custom-jenkins:latest` with `docker build --pull` from the
+  J2 Dockerfile, re-saved `images/custom-jenkins_latest.tar` (447 MB, tar listing
+  valid) so the offline cache matches the live tag, and started Jenkins via
+  `scripts/stack.sh up jenkins`. Verified: HTTP 200 on `/login`, "Jenkins is fully
+  up and running" in the log, all six scanners plus `python3` report the pinned
+  versions inside the running container, and `jenkins_home` still has 37 job
+  configs and 193 plugin dirs. The local scratch tag `custom-jenkins:j2-test`
+  was retained. **Risk:** `make scan-images` now reports `custom-jenkins:latest`
+  at **7 CRITICAL / 151 HIGH** fixable (was 1/41 after P1 #1); the added scanner
+  toolchain (semgrep's Python venv and Go-based scanner binaries) brought in most
+  of the new findings. `make scan-images` still runs and reports the other
+  images as before.
+
+- **J4 — Verify the Android builds** (`a172f04`, `e04be23` design notes;
+  `752e11a` in JobTrigger): ran both Android jobs sequentially on
+  `BRANCH=docs/product-proposals-phase-26`. Frontend #3 (on `develop`) hung in
+  `build_runner` with all outputs cached (both Dart processes in `futex_do_wait`,
+  21 min of no output); aborted and removed the leaked container. Frontend #4
+  cleared the stale `.dart_tool/build` cache, got through code generation in 29 s
+  and reached `assembleDebug`, but Docker OOM-killed the container after 908.7 s
+  (Gradle plus two Kotlin daemons, each `-Xmx3g`, versus ~10.6 GB Docker). Fix:
+  capped Gradle at `-Xmx2g -XX:MaxMetaspaceSize=768m` and added
+  `kotlin.daemon.jvmargs=-Xmx1g` in the identical `flutter()` helper of all six
+  JobTrigger Jenkinsfiles (all six hashes verified equal), committed and pushed
+  with approval. **Debug APK: PASS** — `JobTrigger-frontend-CI #5` built and
+  archived `app-debug.apk` (187 MB, sha256 `ee9f2e2c…90b`) in 966536 ms with no
+  OOM. **Release APK: FAIL** — `JobTrigger-release-CD` #5 and retry #6 abort in
+  `compileFlutterBuildRelease` with Dart's `Unexpected EINTR errno` in
+  `File::Copy` (exit 134/SIGABRT); no OOM event, reproducible under qemu/amd64.
+  J4 closes as verified-with-finding; the release crash is tracked as **J11**.
+
+- **J5 — Fix the Jenkins `sonarqube-token` 401** (`e800c9d` design note; no tracked
+  source changes): read-only checks proved the gitignored `sonarqube/.env` token
+  valid (`{"valid":true}`) while the Jenkins credential with the same ID was
+  invalid (`{"valid":false}`) — the cause of backend #5's scanner `HTTP 401`.
+  With approval, replaced the Jenkins `StringCredentialsImpl` value with the
+  existing valid token via the Jenkins credentials store API, using a mode-600
+  temp file so the value was never printed or entered in chat; removed and
+  verified the temp files in both the container and host. No new token was
+  generated or revoked (the value appears in 0 build logs). Post-change Jenkins
+  check: `{"valid":true}`. Backend #6 with `SONARQUBE_SCAN=true` reported
+  `ANALYSIS SUCCESSFUL` / `EXECUTION SUCCESS` with no 401. The build ended
+  `ABORTED` for a separate reason — `waitForQualityGate()` timed out because no
+  SonarQube→Jenkins webhook is configured (J12); the gate itself is `OK` in
+  SonarQube.
+
+- **J6 — Commit the stack's Jenkins/SonarQube changes** (`4148c17` design note;
+  no source changes needed): the backlog item was stale — all four files were
+  already committed on `feat/dashboard`. `jenkins/CI.JenkinsFile` template fixes
+  (`710b500`) and scanner-binary switch (`8757da9`), `jenkins/README.md` and
+  `jenkins/PIPELINE_TEMPLATE.md` (`710b500`), and `sonarqube/docker-compose.yml`
+  heaps (`710b500`) plus the P1 #2 image bump (`4acffd6`). Verified the fixes are
+  present by grep (`--volumes-from`, `-Dsonar.token`, `semgrep scan`, heaps
+  768m/768m/1G) and by successful pipeline runs this session. The unrelated
+  `.DS_Store` modification was left alone.
+
+- **J7 — Executors 2 → 3** (`0b0797e` design note; no source changes): set
+  `Jenkins.instance.numExecutors` to 3 through the authenticated Script Console
+  and saved, so a quick job can run beside the two heavy Flutter jobs. Kept below
+  4 because two Flutter builds plus SonarQube already fill Docker's ~10.6 GB.
+  Verified `config.xml` now has `<numExecutors>3</numExecutors>`, `/login` returns
+  200, and the Jenkins log has no new errors. No containers were restarted.
+
+- **J8 — Revoke the shared Jenkins API token** (`296b3c8` design note; no source
+  changes): revoked the single API token named `jobTrigger` on user
+  'Sithum Raigamage' (created 2026-10-28, expired 2026-11-27, last used
+  2026-11-19) with approval, via the Jenkins API-token store's `revokeToken(uuid)`
+  in the authenticated Script Console. No value was printed. Explicitly saved
+  the user so the change persisted: on-disk `<tokenList/>` is empty and the uuid
+  is gone. No replacement token was generated (create one when needed). The
+  dashboard's Jenkins token setting is only the example placeholder, so nothing
+  live depended on it. `/login` still returns 200.
+
+- **J9 — Optional JobTrigger setup** (`a16cd7b` design note; runtime config only):
+  you chose to set a dedicated `CI_RECEIVER_EMAIL`, so it was added as a Jenkins
+  global environment property through the authenticated Script Console and saved
+  (value kept only in gitignored `jenkins_home/config.xml`, never in committed
+  docs or chat output). Verified read-only in Jenkins (`present=true
+  configured=true`), on disk, and by `/login` → 200; no containers restarted.
+  The other three sub-items were decided as: defer `codecov-token` /
+  `UPLOAD_CODECOV` (off by default, no token available), defer the `macos` agent
+  / `BUILD_IOS` (off by default, no agents configured), and accept/document the
+  `trivy fs` LGPL-3.0 `sharp`/`libvips` findings — security build #4 is
+  `SUCCESS`, only that stage is `UNSTABLE`, and the scanner remains unchanged so
+  the signal stays visible. No JobTrigger source edits or pushes.
+
 ## 2026-11-14
 
 ### New services

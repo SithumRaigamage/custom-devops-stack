@@ -9,21 +9,15 @@ Move an item to `docs/CHANGELOG.md` when it's finished.
 Context: the `Projects/JobTrigger` jobs (backend, frontend, website, security, tools CI;
 release CD) run the JobTrigger repo's `Jenkins/<component>/Jenkinsfile`, built on
 `jenkins/CI.JenkinsFile`, from branch `docs/product-proposals-phase-26` (last commit
-`f42feaf`). Passing: website, tools, security, backend (with `SONARQUBE_SCAN=false`).
-Docker Desktop was stopped at the end of the session; start it first.
+`752e11a`). Passing: website, tools, security, backend (with `SONARQUBE_SCAN=false`),
+and frontend debug APK (J4). Docker Desktop was stopped at the end of an earlier
+session; start it first if the containers are down.
 
 | # | Item | Why / notes | Area |
 |---|---|---|---|
-| J1 | Bake the Android NDK into `jobtrigger-flutter` | Every Android build downloads and unpacks NDK 28.2 (~700 MB): it lands in the throwaway container. In `buildFlutterImage()` (shared helper, all six JobTrigger Jenkinsfiles) add `sdkmanager "ndk;<v>"`, reading `<v>` from the Flutter SDK's `ndkVersion` instead of hardcoding it. Same change in both copies, or the image tag stops matching | CI/CD |
-| J2 | Install scanners in the Jenkins image | In `jenkins/Dockerfile`, like Trivy (pinned, checksum-verified, arm64 + amd64): gitleaks 8.30.1, osv-scanner 2.7.0, syft, hadolint 2.12.0, semgrep 1.185.0 (Python venv), `python3`. Then switch `CI.JenkinsFile` and the JobTrigger security/tools stages from `docker run <image>` to the agent binaries. Flutter/Android stay in their amd64 image (Android tools are x86-only on Linux); Playwright stays in its image | CI/CD |
-| J3 | Rebuild and restart Jenkins | `docker compose build && docker compose up -d` in `jenkins/` after J1/J2; jobs and settings persist in `jenkins_home` | CI/CD |
-| J4 | Verify the Android builds | Frontend "Build Debug APK" and release "Build Android APK" have not run since the Gradle fixes (`af4ac91` heap cap, `f42feaf` `GRADLE_USER_HOME`); both earlier runs were aborted. Run them **one at a time** (each Flutter build takes ~4.5 GB) | CI/CD |
-| J5 | Regenerate `sonarqube-token` | SonarQube returns 401 for the stored token, so every job's Sonar stage fails (backend #5). New token in SonarQube → update the `sonarqube-token` credential in Jenkins (same ID), then re-run backend with Sonar on. Ties in with #14 | Security |
-| J6 | Commit the stack's Jenkins/SonarQube changes | Uncommitted on `feat/dashboard`: `jenkins/CI.JenkinsFile` (template now compiles; `--volumes-from` mounts; `sonar.token`; semgrep fix), `jenkins/README.md`, `jenkins/PIPELINE_TEMPLATE.md`, `sonarqube/docker-compose.yml` (heaps 768M/768M/1G: at 1G/1G/2G Elasticsearch was killed, exit 137) | Docs |
-| J7 | Executors 2 → 3 | Lets a quick job run beside the two heavy ones. Not 4: two Flutter builds plus SonarQube already fill Docker's ~10.6 GB | CI/CD |
-| J8 | Revoke the temporary Jenkins API token | It was shared during the session; create a new one when needed | Security |
-| J9 | Optional JobTrigger setup | `CI_RECEIVER_EMAIL` global property (email receiver), `codecov-token` credential (enables `UPLOAD_CODECOV`), a `macos` agent (enables `BUILD_IOS`), and a decision on `trivy fs` license findings (LGPL-3.0 in JobTrigger-Web, marks security UNSTABLE) | CI/CD |
 | J10 | Merge the JobTrigger `Jenkins/` folder to `develop` | Jobs build from `docs/product-proposals-phase-26`; after the merge, switch each job's branch to `*/develop` | CI/CD |
+| J11 | Fix the release APK's Dart `File::Copy` EINTR abort | `JobTrigger-release-CD` #5 and #6 both abort in `compileFlutterBuildRelease` with `file_linux.cc: 492: Unexpected EINTR errno` (Dart 3.13.7, exit 134) under the amd64/qemu Flutter image — reproducible, not memory-related. Debug APK passes. Investigate a Dart/Flutter workaround or an amd64-native agent; re-run the release build when fixed | CI/CD |
+| J12 | Configure the SonarQube → Jenkins webhook | No webhook is configured for project `JobTrigger`, so `waitForQualityGate()` polls for 5 min and times out; backend #6 ended ABORTED even though the analysis succeeded and the gate is `OK`. Add a project/global webhook pointing at Jenkins' `/sonarqube-webhook/`, then re-run a backend build with Sonar on | CI/CD |
 
 ## P2 — Soon
 

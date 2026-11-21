@@ -44,6 +44,13 @@ Notable changes to the stack. Newest first. Commit history has the details.
   that warning and a Jenkins exclusions note to `make restore-help`. Scratch dir
   and scratch container were removed; live `make status` and `jenkins_home` unchanged.
 
+### Dashboard
+- **P1 #4 — Dependency audit** (`4846a7c`): ran `pnpm audit --audit-level high` in
+  `dashboard/` (exit 0) — no HIGH/CRITICAL advisories, so no dependency fixes or
+  package installs were needed. One moderate advisory remains (esbuild ≤0.24.2 via
+  the `drizzle-kit` dev dependency, dev-server only, GHSA-67mh-4wv8-2f99); accepted
+  as out of scope and noted in `docs/audit-plan.md`, which is now fully complete.
+
 ## 2026-11-14
 
 ### New services

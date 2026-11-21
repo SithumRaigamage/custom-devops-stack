@@ -55,6 +55,22 @@ Notable changes to the stack. Newest first. Commit history has the details.
   23/23 passing, 0 failures. No source changes were needed. This completes P1;
   the backlog now starts at the Jenkins items.
 
+### Jenkins
+- **J1 — Bake the Android NDK into `jobtrigger-flutter`** (`ed7cc78`, JobTrigger
+  repo, branch `docs/product-proposals-phase-26`): added an NDK install to the
+  identical `buildFlutterImage()` helper in all six JobTrigger Jenkinsfiles
+  (`backend`, `frontend`, `release`, `security`, `tools`, `website`) so the six
+  copies stay in sync and the shared `jobtrigger-flutter:3.47.8` tag keeps the
+  same meaning. The version is read at Docker build time from the checked-out
+  Flutter SDK's `packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt`
+  (`val ndkVersion`) via `sed | head -1 | xargs -r sdkmanager`, instead of being
+  hardcoded, and a `find …/ndk | grep -q .` guard fails the layer if no NDK
+  landed. Verified: all six helper bodies hash identically; the generated
+  Dockerfile expands `$FLUTTER_VERSION` correctly; the extraction command in
+  the existing image resolves `ndk;28.2.13676358`; and a throwaway container
+  proved `sdkmanager` installs that NDK (licences already accepted). Did not
+  rebuild the image tag or the Jenkins container — that is J3.
+
 ## 2026-11-14
 
 ### New services

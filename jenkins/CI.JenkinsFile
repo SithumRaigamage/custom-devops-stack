@@ -8,6 +8,12 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '30'))
     }
 
+    // Docker-in-Docker note: Jenkins itself runs in a container and talks to the
+    // host's Docker daemon, so `-v "$WORKSPACE:/repo"` would mount an EMPTY host
+    // path (the workspace only exists inside the Jenkins container). Tool
+    // containers below use `--volumes-from "$(hostname)"` to share Jenkins'
+    // real jenkins_home mount, and `-w "$WORKSPACE"` because the path is the same.
+
     // Standardized environment and credential placeholders
     environment {
         // SonarScanner tool name (configure in Jenkins Global Tool Configuration)
@@ -76,7 +82,7 @@ pipeline {
     }
 
     stages {
-        
+
         // Stage to checkout source code from the provided Git repository and branch
         stage('Checkout') {
             steps {
@@ -123,7 +129,8 @@ pipeline {
                         command -v docker >/dev/null
 
                         docker run --rm \
-                          -v \"${env.WORKSPACE}:/repo\" -w /repo \
+                          --volumes-from \"\$(hostname)\" -w \"${env.WORKSPACE}\" \
+                          -u \"\$(id -u):\$(id -g)\" -e HOME=/tmp \
                           zricethezav/gitleaks:v8.21.2 \
                           detect --source . --no-git --redact \
                           --report-format sarif --report-path \"${GITLEAKS_REPORT_NAME}\"
@@ -145,9 +152,10 @@ pipeline {
                             command -v docker >/dev/null
 
                             docker run --rm \
-                              -v \"${env.WORKSPACE}:/src\" -w /src \
-                              returntocorp/semgrep:1.89.0 \
-                              semgrep scan --config=auto --sarif --output \"${SEMGREP_REPORT_NAME}\"
+                              --volumes-from \"\$(hostname)\" -w \"${env.WORKSPACE}\" \
+                              -u \"\$(id -u):\$(id -g)\" -e HOME=/tmp \
+                              semgrep/semgrep:1.185.0 \
+                              semgrep scan --config=auto --sarif-output=\"${SEMGREP_REPORT_NAME}\" .
                         """
                     }
                 }
@@ -165,7 +173,8 @@ pipeline {
                         command -v docker >/dev/null
 
                         docker run --rm \
-                          -v \"${env.WORKSPACE}:/repo\" -w /repo \
+                          --volumes-from \"\$(hostname)\" -w \"${env.WORKSPACE}\" \
+                          -u \"\$(id -u):\$(id -g)\" -e HOME=/tmp \
                           aquasec/trivy:0.57.0 \
                           fs --timeout 10m \
                           --scanners vuln,config,license \
@@ -189,9 +198,10 @@ pipeline {
                         command -v docker >/dev/null
 
                         docker run --rm \
-                          -v \"${env.WORKSPACE}:/repo\" -w /repo \
+                          --volumes-from \"\$(hostname)\" -w \"${env.WORKSPACE}\" \
+                          -u \"\$(id -u):\$(id -g)\" -e HOME=/tmp \
                           anchore/syft:v1.4.1 \
-                          dir:/repo -o cyclonedx-json=/repo/\"${SBOM_REPORT_NAME}\"
+                          dir:. -o cyclonedx-json=\"${SBOM_REPORT_NAME}\"
                     """
                 }
             }
@@ -220,7 +230,7 @@ pipeline {
                 }
             }
         }
-        
+
         // Stage to install Node.js dependencies (prefer reproducible installs)
         stage('Install') {
             when {
@@ -464,7 +474,7 @@ pipeline {
                     def logFile = 'python-test.log'
                     def status = sh(script: """
                         bash -lc 'set -euo pipefail
-                        docker run --rm -v "${env.WORKSPACE}:/repo" -w /repo python:3.12-slim bash -lc '"'"'
+                        docker run --rm --volumes-from "\$(hostname)" -w "${env.WORKSPACE}" python:3.12-slim bash -lc '"'"'
                           python -m pip install -q --upgrade pip &&
                           if [ -f requirements.txt ]; then pip install -q -r requirements.txt; fi &&
                           pip install -q pytest &&
@@ -510,7 +520,7 @@ pipeline {
                     def logFile = 'go-test.log'
                     def status = sh(script: """
                         bash -lc 'set -euo pipefail
-                        docker run --rm -v "${env.WORKSPACE}:/repo" -w /repo golang:1.22 bash -lc '"'"'
+                        docker run --rm --volumes-from "\$(hostname)" -w "${env.WORKSPACE}" golang:1.22 bash -lc '"'"'
                           go test ./...
                         '"'"' | tee ${logFile}
                         '
@@ -565,7 +575,7 @@ pipeline {
                     def logFile = 'dotnet-test.log'
                     def status = sh(script: """
                         bash -lc 'set -euo pipefail
-                        docker run --rm -v "${env.WORKSPACE}:/repo" -w /repo mcr.microsoft.com/dotnet/sdk:8.0 bash -lc '"'"'
+                        docker run --rm --volumes-from "\$(hostname)" -w "${env.WORKSPACE}" mcr.microsoft.com/dotnet/sdk:8.0 bash -lc '"'"'
                           dotnet test --nologo
                         '"'"' | tee ${logFile}
                         '
@@ -623,7 +633,7 @@ pipeline {
                                 -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                                 -Dsonar.projectName=\"${SONAR_PROJECT_NAME}\" \
                                 -Dsonar.host.url=${SONAR_SERVER_URL} \
-                                -Dsonar.login=$SONAR_AUTH_TOKEN \
+                                -Dsonar.token=\"\$SONAR_AUTH_TOKEN\" \
                                 -Dsonar.sources=src \
                                 -Dsonar.exclusions=node_modules/**,dist/**,**/*.spec.ts \
                                 -Dsonar.javascript.node.maxspace=768
@@ -727,11 +737,11 @@ pipeline {
                         catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                             sh """
                                 set -e
-                                if grep -Eiq '^\s*FROM\s+[^#]+:latest(\s|$)' Dockerfile; then
+                                if grep -Eiq '^\\s*FROM\\s+[^#]+:latest(\\s|\$)' Dockerfile; then
                                   echo 'ERROR: Dockerfile uses :latest tag. Pin to a version or digest.'
                                   exit 1
                                 fi
-                                if ! grep -Eiq '^\s*USER\s+' Dockerfile; then
+                                if ! grep -Eiq '^\\s*USER\\s+' Dockerfile; then
                                   echo 'ERROR: Dockerfile does not set USER. Prefer non-root runtime.'
                                   exit 1
                                 fi
@@ -743,11 +753,11 @@ pipeline {
                         // In prod, enforce these as hard failures
                         sh """
                             set -e
-                            if grep -Eiq '^\s*FROM\s+[^#]+:latest(\s|$)' Dockerfile; then
+                            if grep -Eiq '^\\s*FROM\\s+[^#]+:latest(\\s|\$)' Dockerfile; then
                               echo 'ERROR: Dockerfile uses :latest tag. Pin to a version or digest.'
                               exit 1
                             fi
-                            if ! grep -Eiq '^\s*USER\s+' Dockerfile; then
+                            if ! grep -Eiq '^\\s*USER\\s+' Dockerfile; then
                               echo 'ERROR: Dockerfile does not set USER. Prefer non-root runtime.'
                               exit 1
                             fi
@@ -811,8 +821,8 @@ pipeline {
                             command -v docker >/dev/null
 
                             if [ ! -f html.tpl ]; then
-                                # Prefer pinned template (avoid pulling 'latest' at runtime)
-                                if ! curl -fsSL https://raw.githubusercontent.com/aquasecurity/trivy/v0.57.0/contrib/html.tpl -o html.tpl; then
+                                # Pinned to the agent's Trivy version (TRIVY_VERSION in jenkins/Dockerfile)
+                                if ! curl -fsSL https://raw.githubusercontent.com/aquasecurity/trivy/v0.76.2/contrib/html.tpl -o html.tpl; then
                                     echo "WARNING: Failed to download Trivy HTML template; falling back to text report"
                                     trivy image --timeout 10m --format table -o \"${TRIVY_TEXT_REPORT_NAME}\" \"${imageRef}\"
                                     exit 0

@@ -20,6 +20,15 @@ Status key: **Installed** · **Planned** (priority picks) · **Idea** (not sched
 | Jenkins | CI/CD | Installed | 8080, 50000 |
 | SonarQube Community + PostgreSQL | Code quality | Installed | 9000 |
 | MongoDB (local binary) | Database | Installed | 27018 |
+| MongoDB 7 (Docker, `mongodb/`) | Database | Installed | 27017 |
+| PostgreSQL 16 (`postgres/`) | Database | Installed | 5433 |
+| Open WebUI + Ollama | Local LLM chat | Installed | 3000, 11434 |
+| StackPilot (`dashboard/`) | Stack dashboard, audit log | Installed | 3001, 4000, 5432 |
+| Prometheus, Grafana, cAdvisor, Loki, Promtail (`observability/`) | Metrics and logs | Installed | 9090, 3002, 8081, 3100 |
+| Gitleaks, Trivy (`make scan`, pre-commit, CI) | Security scanning | Installed | — |
+| Umami (`analytics/`) | Product analytics, data in `postgres/` | Installed | 3004 |
+| Mailpit (`mailpit/`) | Local mail catcher | Installed | 1025, 8025 |
+| GlitchTip (`glitchtip/`) | Error and crash reporting, data in `postgres/` | Installed (verified 2026-11-14: healthy, migrations applied) | 3005 |
 
 ## Recommended order
 
@@ -27,16 +36,16 @@ Status key: **Installed** · **Planned** (priority picks) · **Idea** (not sched
 
 | Tool | What it adds | Notes | Status |
 |---|---|---|---|
-| Trivy (or Grype) | Vulnerability scan of images, dependencies and IaC | One container; Jenkins can call it. SonarQube does not scan images. | Planned |
-| Gitleaks | Secret scanning of files and git history | Run as a pre-commit hook and in Jenkins. Would have caught a token committed to a tracked `.env.example`. | Planned |
+| Trivy (or Grype) | Vulnerability scan of images, dependencies and IaC | One container; Jenkins can call it. SonarQube does not scan images. | Done: CI pipeline stage + `make scan-images` |
+| Gitleaks | Secret scanning of files and git history | Run as a pre-commit hook and in Jenkins. Would have caught a token committed to a tracked `.env.example`. | Done: CI stage, pre-commit hook, `make scan-secrets` |
 | Nexus or Harbor | Private registry and artifact store | Replaces the `images/` tar cache; Jenkins pushes builds here. Harbor is registry-focused, Nexus also stores Maven/npm/PyPI. | Planned |
 
 ### 2. Next — observability
 
 | Tool | What it adds | Notes | Status |
 |---|---|---|---|
-| Prometheus + Grafana + cAdvisor | Metrics and dashboards for container CPU/memory | Useful for checking the SonarQube memory limits. | Planned |
-| Loki + Promtail | Central logs | Replaces running each `*-logs` command separately. | Planned |
+| Prometheus + Grafana + cAdvisor | Metrics and dashboards for container CPU/memory | Useful for checking the SonarQube memory limits. cAdvisor needs v0.54+ and the containerd socket on Docker Desktop. Jenkins metrics need the *Prometheus metrics* plugin. | Done: `observability/` |
+| Loki + Promtail | Central logs | Replaces running each `*-logs` command separately. | Done: `observability/` |
 
 ### 3. Later — platform
 
@@ -51,10 +60,10 @@ Status key: **Installed** · **Planned** (priority picks) · **Idea** (not sched
 
 | Item | Why | Status |
 |---|---|---|
-| Root `docker-compose.yml` or Makefile | Stack no longer depends on functions in `~/.zshrc` | Planned |
+| Root `docker-compose.yml` or Makefile | Stack no longer depends on functions in `~/.zshrc` | Done: `Makefile` + `scripts/stack.sh` |
 | Jenkins Configuration as Code (JCasC) | Rebuild Jenkins from the repo | Planned |
 | `docs/` for ports and credentials policy | One source of truth | Planned (this file is the start) |
-| Backup script for `jenkins_home`, `sonarqube/postgresql` | Backup readiness | Idea |
+| Backup script for `jenkins_home`, `sonarqube/postgresql` | Backup readiness | Done: `make backup` |
 
 ## Full catalogue by category
 
@@ -88,7 +97,8 @@ Nexus Repository, Harbor, JFrog Artifactory OSS, Docker Registry (`registry:2`),
 - Logs: Loki, Promtail, Grafana Alloy, ELK/OpenSearch, Graylog.
 - Tracing: Jaeger, Tempo, OpenTelemetry Collector.
 - Uptime: Uptime Kuma, Blackbox exporter.
-- Errors: Sentry (self-hosted), GlitchTip.
+- Errors: Sentry (self-hosted), GlitchTip (added 2026-11-14 in `glitchtip/` for JobTrigger crash reports; all-in-one mode, no Valkey, data in `postgres/`).
+- Product analytics: Umami (installed), Plausible, PostHog (too heavy for this Mac).
 
 ### Infrastructure and platform
 Terraform / OpenTofu, Ansible, Packer, Pulumi, Vagrant, Multipass, Colima, kind, k3d, minikube, k3s, Portainer, Lazydocker, Dozzle.
@@ -132,8 +142,28 @@ Figures are estimates, not measurements. Measure with cAdvisor once it is runnin
 
 ## Port allocation
 
-Reserved: 8080, 50000 (Jenkins), 9000 (SonarQube), 27018 (MongoDB). Port 27017 is used by an unrelated project.
-Suggested for new services: Grafana 3000, Prometheus 9090, Loki 3100, Nexus 8081, Harbor 8082, Gitea 3001, Vault 8200, Traefik 80/443. Confirm each is free before use.
+All bound to 127.0.0.1 unless noted.
+
+| Port | Service |
+|---|---|
+| 3000 | Open WebUI |
+| 3001 | StackPilot dashboard (web) |
+| 3002 | Grafana |
+| 3004 | Umami (`analytics/`) |
+| 3100 | Loki |
+| 4000 | StackPilot API |
+| 5432 | StackPilot dashboard Postgres |
+| 5433 | General-purpose Postgres (`postgres/`) |
+| 8080, 50000 | Jenkins (`JENKINS_BIND` to expose) |
+| 1025 | Mailpit SMTP |
+| 8025 | Mailpit inbox |
+| 8081 | cAdvisor |
+| 9000 | SonarQube (`SONAR_BIND` to expose) |
+| 9090 | Prometheus |
+| 11434 | Ollama (host) |
+| 27017 | MongoDB (`mongodb/`, Docker). Note the separate local `mongod` from `script.sh` uses 27018 |
+
+Suggested for future services: Nexus 8082, Harbor 8083, Gitea 3003, Vault 8200, Traefik 80/443. Confirm each is free before use (`make doctor` checks the reserved ones).
 
 ## How to add a tool
 

@@ -62,6 +62,28 @@ From Jenkins job configuration (Declarative pipeline script from SCM):
 2. Configure job parameters for `RELEASE_VERSION` when triggering a release build.
 3. Ensure the job has access to the credentials referenced in `GITHUB_CREDENTIALS` and `SONAR_AUTH_TOKEN`.
 
+## Docker-in-Docker workspace
+
+Tool stages (gitleaks, semgrep, trivy fs, syft, Python/Go/.NET tests) run in
+containers on the host's Docker daemon. They mount the workspace with
+`--volumes-from "$(hostname)" -w "$WORKSPACE"`, not `-v "$WORKSPACE:/repo"`: from
+the host, the Jenkins workspace path does not exist, and a `-v` mount of it is
+silently empty. See `README.md` → "Running tools in containers".
+
+## Changes (2026-11-19)
+
+- Workspace mounts switched to `--volumes-from` (above); scanner containers run as
+  the `jenkins` user (`-u`) with `HOME=/tmp`.
+- `Dockerfile Policy Checks` no longer breaks compilation: `\s` and `$` in its
+  `"""` strings are escaped (`\\s`, `\$`). Before this, a pipeline built from
+  the template failed to compile before running any stage.
+- Sonar token passed as `-Dsonar.token="$SONAR_AUTH_TOKEN"` (expanded by the
+  shell, so it is not written into the logged command); `sonar.login` is deprecated.
+- Semgrep `semgrep/semgrep:1.185.0` with `--sarif-output` and an explicit `.`
+  target: `--sarif --output` exited 2 with no message on a real repository, and
+  without a target the semgrep image refuses to run unless code is at `/src`.
+- Trivy HTML template pinned to the agent's Trivy (`v0.76.2`).
+
 ## Troubleshooting
 
 - SonarQube connection failures: verify `SONAR_SERVER_URL`, the server name in Jenkins, and that the token credential is correct.
@@ -73,6 +95,9 @@ From Jenkins job configuration (Declarative pipeline script from SCM):
 - `{{NODEJS_TOOL_NAME}}` = `NODEJS`
 - `{{SONAR_SCANNER_TOOL_NAME}}` = `SonarScanner`
 - `{{SONAR_SERVER_NAME}}` = `SonarServer`
+- `{{SONAR_SERVER_URL}}` = `http://sonarqube:9000`
+- `{{SONAR_AUTH_TOKEN_ID}}` = `sonarqube-token`
+- `{{GITHUB_CREDENTIALS}}` = `github-ssh-key`
 - `{{GIT_REPO_URL}}` = `git@github.com:YourOrg/your-repo.git`
 - `{{DOCKER_IMAGE_NAME}}` = `your-frontend`
 

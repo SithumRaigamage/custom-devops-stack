@@ -1,0 +1,30 @@
+# Gitleaks configuration for the custom DevOps stack.
+# Extends the built-in ruleset and only allow-lists machine-local data folders and
+# known placeholder values, never real files with credentials.
+title = "custom-devops-stack"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local data, caches, binary image tars and documented placeholders"
+paths = [
+  '''(^|/)jenkins/jenkins_home/''',
+  '''(^|/)jenkins/jenkins_sonar_cache/''',
+  '''(^|/)sonarqube/(data|postgresql|logs|temp|extensions)/''',
+  '''(^|/)open-webui/data/''',
+  '''(^|/)images/.*\.tar$''',
+  '''(^|/)open-webui/backup/.*\.tar$''',
+  '''(^|/)node_modules/''',
+  '''(^|/)\.next/''',
+  '''(^|/)dist/''',
+  '''(^|/)pnpm-lock\.yaml$''',
+  '''(^|/)reports/''',
+  '''(^|/)backups/''',
+]
+# Placeholders used in .env.example files and docs.
+regexes = [
+  '''change-me''',
+  '''<your [A-Za-z ]+>''',
+  '''test-secret-test-secret-test-secret-1234''',
+]

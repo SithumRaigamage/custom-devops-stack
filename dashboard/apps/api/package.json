@@ -4,18 +4,31 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "exec tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/compose.test.ts src/status.test.ts src/integrations.test.ts src/registry.test.ts src/audit.test.ts src/logs.test.ts",
+    "test:db": "node --import tsx --test src/persistence.db.test.ts",
+    "test:all": "pnpm test && pnpm test:db"
   },
   "dependencies": {
-    "@fastify/cors": "^11.4.1",
+    "@fastify/helmet": "^13.0.1",
+    "@fastify/rate-limit": "^11.2.2",
+    "argon2": "^0.45.2",
+    "dockerode": "^5.0.1",
+    "dotenv": "^18.0.9",
+    "drizzle-kit": "^0.31.11",
+    "drizzle-orm": "^0.45.4",
     "fastify": "^5.12.8",
-    "yaml": "^2.9.1"
+    "pg": "^8.23.1",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/dockerode": "^4.0.2",
     "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

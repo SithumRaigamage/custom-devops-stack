@@ -1,32 +1,55 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { parse } from "yaml";
+import { homedir } from "node:os";
+import { pool } from "./db.js";
+import type { IntegrationKind, Service, ServiceType } from "./service-model.js";
 
-export interface Service {
-  id: string;
-  name: string;
-  folder: string;
-  composeFile: string;
-  url: string;
-  health: string;
+// The model types live in a DB-free module; re-exported for existing importers.
+export type { IntegrationKind, Service, ServiceType } from "./service-model.js";
+export { INTEGRATION_KINDS } from "./service-model.js";
+
+let cachedServices: Service[] = [];
+
+function displayFolder(folder: string): string {
+  return folder === homedir() || folder.startsWith(`${homedir()}/`)
+    ? `~${folder.slice(homedir().length)}`
+    : folder;
 }
 
-const FIELDS: (keyof Service)[] = ["id", "name", "folder", "composeFile", "url", "health"];
+export async function refreshServices(): Promise<Service[]> {
+  const { rows } = await pool.query<{
+    compose_id: string; name: string; description: string; icon: string | null;
+    type: ServiceType; folder: string; working_dir: string | null; compose_file: string;
+    port: number | null; url: string; health_url: string | null; start_cmd: string | null;
+    stop_cmd: string | null; restart_cmd: string | null; logs_cmd: string | null;
+    sort_order: number; run_in_shell: boolean; integration: IntegrationKind;
+  }>(`SELECT compose_id,name,description,icon,type,folder,working_dir,compose_file,port,url,
+             health_url,start_cmd,stop_cmd,restart_cmd,logs_cmd,sort_order,run_in_shell,integration
+        FROM services ORDER BY sort_order, compose_id`);
+  cachedServices = rows.map((row) => ({
+    id: row.compose_id,
+    name: row.name,
+    desc: row.description,
+    ...(row.icon ? { icon: row.icon } : {}),
+    type: row.type,
+    folder: displayFolder(row.folder),
+    workingDir: row.working_dir ?? row.folder,
+    composeFile: row.compose_file,
+    url: row.url,
+    health: row.health_url ?? row.url,
+    ...(row.port ? { port: row.port } : {}),
+    ...(row.start_cmd ? { startCommand: row.start_cmd } : {}),
+    ...(row.stop_cmd ? { stopCommand: row.stop_cmd } : {}),
+    ...(row.restart_cmd ? { restartCommand: row.restart_cmd } : {}),
+    ...(row.logs_cmd ? { logsCommand: row.logs_cmd } : {}),
+    runInShell: row.run_in_shell,
+    integration: row.integration,
+    sortOrder: row.sort_order,
+  }));
+  return cachedServices;
+}
 
-// services.yaml lives at the dashboard root; override with SERVICES_FILE.
-const defaultPath = fileURLToPath(new URL("../../../services.yaml", import.meta.url));
+await refreshServices();
 
-export function loadServices(path = process.env.SERVICES_FILE ?? defaultPath): Service[] {
-  const doc = parse(readFileSync(path, "utf8")) as { services?: unknown };
-  if (!doc || !Array.isArray(doc.services)) {
-    throw new Error(`${path}: expected a top-level "services" list`);
-  }
-  return doc.services.map((entry, i) => {
-    for (const field of FIELDS) {
-      if (typeof entry?.[field] !== "string" || entry[field] === "") {
-        throw new Error(`${path}: services[${i}] is missing string field "${field}"`);
-      }
-    }
-    return entry as Service;
-  });
+/** Database-backed snapshot. Registry mutations call refreshServices immediately. */
+export function loadServices(): Service[] {
+  return cachedServices;
 }

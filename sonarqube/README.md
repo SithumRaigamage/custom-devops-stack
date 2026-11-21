@@ -19,7 +19,7 @@ All SonarQube data is stored on your local machine in the following directories:
 ### Services
 
 #### SonarQube Server
-- **Image**: `sonarqube:10.8.0-community`
+- **Image**: `sonarqube:26.11.0.134175-community`
 - **Memory**: 4GB limit, 1GB reserved
 - **CPU**: 2 cores maximum
 - **Port**: 9000
@@ -30,7 +30,7 @@ All SonarQube data is stored on your local machine in the following directories:
 - **CPU**: 1 core maximum
 - **Database Name**: `sonar`
 - **Username**: `sonar`
-- **Password**: `sonar_secure_password` (⚠️ Change this in production!)
+- **Password**: read from gitignored `sonarqube/.env` as `SONARQUBE_DB_PASSWORD` (never committed)
 
 ### Network
 - **Network Name**: `devops-network`
@@ -40,7 +40,7 @@ All SonarQube data is stored on your local machine in the following directories:
 
 ### First Time Setup
 ```bash
-cd /Users/sithumraigamage/Development/sonarqube
+cd /Users/sithumraigamage/Other/02-DevOps-Lab/custom-devops-stack/sonarqube
 
 # Create required directories if they don't exist
 mkdir -p data extensions logs postgresql
@@ -114,7 +114,7 @@ For Jenkins integration:
 
 To backup all SonarQube data:
 ```bash
-cd /Users/sithumraigamage/Development/sonarqube
+cd /Users/sithumraigamage/Other/02-DevOps-Lab/custom-devops-stack/sonarqube
 
 # Stop services first
 docker-compose down

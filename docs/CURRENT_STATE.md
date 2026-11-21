@@ -1,5 +1,12 @@
 # Current State Audit — custom-devops-stack
 
+> **Update 2026-11-12:** much of this audit has since been addressed: one entry point (`make` / `scripts/stack.sh`),
+> bootstrap with generated passwords, localhost binding for Jenkins and SonarQube, `make backup` with retention,
+> Gitleaks + Trivy (`make scan`, pre-commit, CI stages), the observability stack, and the StackPilot dashboard
+> with a full audit log. See `docs/PRACTICES-ROADMAP.md` and `docs/TOOLS-ROADMAP.md` for live status.
+> The resource figures below are from the original audit on the earlier machine; re-measure with `make doctor`
+> and the Grafana "Stack containers" dashboard.
+
 Audit date: 2026-08-09
 Host: MacBook Air (Apple Silicon, model T8112 / M2-class), Darwin 25.5.0
 
@@ -32,7 +39,7 @@ Those are soft `deploy.resources.limits` (only enforced by Swarm, not by plain `
 | Service | Defined in | Image | Status right now |
 |---|---|---|---|
 | Jenkins | `jenkins/docker-compose.yml` | `custom-jenkins:latest` (built from `jenkins/Dockerfile`, base `jenkins/jenkins:latest`) | **Not running** |
-| SonarQube | `sonarqube/docker-compose.yml` | `sonarqube:26.1.0.118079-community` | **Not running** |
+| SonarQube | `sonarqube/docker-compose.yml` | `sonarqube:26.11.0.134175-community` | **Not running** |
 | SonarQube DB | `sonarqube/docker-compose.yml` | `postgres:15-alpine` | **Not running** |
 | MongoDB | manual local install, controlled by `script.sh` | `mongod` binary at `../mongodb-macos-aarch64--8.2.3/bin/mongod` | **Not running** (`pgrep mongod` empty) |
 
@@ -61,7 +68,7 @@ This is a Dockerized Mongo for an unrelated project (`expense-tracker`), and **i
 | Jenkins container ran as `user: root`, and its entrypoint ran `chmod 666 /var/run/docker.sock` (world read/write on the Docker socket = root-equivalent access to the host from inside any container) | `jenkins/docker-compose.yml` | High | **Fixed** — entrypoint now starts as root only to match the `jenkins` user's group to the socket's real GID, then drops to `jenkins` via `gosu` (`jenkins/docker-entrypoint-wrapper.sh`). Socket is no longer world-writable. Jenkins still has effective docker.sock access (needed for Docker-in-Docker pipelines), which remains a real, accepted trade-off — not eliminated, just no longer world-exposed. |
 | `jenkins/README.md` claimed *"✅ Removed `user: root` (security risk eliminated)"* — was out of date / incorrect | `jenkins/README.md` vs `jenkins/docker-compose.yml` | Docs/reality mismatch | **Fixed** — README now describes the actual gosu-based mechanism and its remaining trade-off. |
 | PostgreSQL password hardcoded in plaintext and committed to git (`sonar_secure_password`), used for both the SonarQube app user and the DB itself | `sonarqube/docker-compose.yml` | Medium (local-only network, but still a secret in git history) | **Fixed going forward** — moved to gitignored `sonarqube/.env` (`SONARQUBE_DB_PASSWORD`), compose now reads `${SONARQUBE_DB_PASSWORD:?...}`. Value was kept identical to what's already in the initialized `./postgresql` data dir, since Postgres only applies `POSTGRES_PASSWORD` on first init — `.env.example` documents the `ALTER USER` command needed to actually rotate it. Note: the old value still exists in prior git history; full remediation would mean rotating the password *and* scrubbing history, which hasn't been done. |
-| `sonarqube/README.md` documents image `sonarqube:10.8.0-community`; actual compose pins `26.1.0.118079-community` | `sonarqube/README.md` vs `sonarqube/docker-compose.yml` | Docs/reality mismatch | **Fixed** — README now states the real pinned version. |
+| `sonarqube/README.md` documented image `sonarqube:10.8.0-community`; actual compose pinned `26.1.0.118079-community` | `sonarqube/README.md` vs `sonarqube/docker-compose.yml` | Docs/reality mismatch | **Fixed** — README now states the real pinned version; both were bumped to `26.11.0.134175-community` on 2026-11-21 (P1 #2). |
 | No `.env` / `.env.example` anywhere in the repo — all config is inline in compose files | repo-wide | Medium | Partially addressed — `sonarqube/.env` + `.env.example` now exist. Jenkins compose has no secrets to move (it has none). |
 | MongoDB has no authentication configured | `script.sh` | Low (local dev only, but noted in README as a TODO already) | Not addressed (still tracked as a TODO). |
 | Local `mongod` (port 27017 default) collided with an unrelated project's `expense-tracker-db` Docker container already bound to 27017 | `script.sh` | Medium (silent failure risk) | **Fixed** — local `mongod` now defaults to port 27018 (`MONGO_PORT` override available), and `start_mongodb()` pre-flight-checks the port with `lsof` and fails with a clear message instead of a cryptic bind error. |

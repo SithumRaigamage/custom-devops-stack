@@ -10,23 +10,39 @@ own `docker-compose.yml`, README and bind-mounted data (no named volumes, so
 
 ```
 custom-devops-stack/
-├── script.sh        # Start/stop Jenkins, SonarQube and MongoDB together
+├── Makefile         # `make help`: one entry point for the whole stack
+├── scripts/         # stack.sh (up/down/status/logs/doctor/bootstrap), backup.sh, scan.sh
+├── script.sh        # Legacy: Jenkins, SonarQube and the local mongod (kept for compatibility)
+├── dashboard/       # StackPilot: web dashboard to run and watch the stack
 ├── jenkins/         # CI/CD server
 ├── sonarqube/       # Code quality (+ PostgreSQL)
 ├── open-webui/      # Chat UI for local Ollama models (own scripts + `webui` shell command)
+├── postgres/        # General-purpose PostgreSQL
+├── mongodb/         # MongoDB 7 in Docker
+├── observability/   # Prometheus, Grafana, cAdvisor, Loki, Promtail
+├── analytics/       # Umami product analytics (data in postgres/)
+├── mailpit/         # Local mail catcher (SMTP 1025, inbox 8025)
+├── glitchtip/       # GlitchTip error and crash reporting (data in postgres/)
 ├── images/          # Saved image tars for offline reload (git-ignored)
+├── backups/         # Output of `make backup` (git-ignored)
+├── reports/         # Output of `make scan` (git-ignored)
 └── docs/            # Tools and practices roadmaps
 ```
 
 How to work here:
 
-1. Start Docker Desktop (it does not start at login). Ollama must also be running for Open WebUI.
-2. Start what you need: `./script.sh start` for Jenkins/SonarQube/MongoDB, or `webui start` for Open WebUI (from any directory, once the shell helper is installed, see below).
-3. Work in the service's UI (see **Access Services**), keeping config in each service's folder and in Git.
-4. Stop with `./script.sh stop`, and `webui stop` for Open WebUI.
-5. Never commit secrets: real values go in gitignored `.env` files, with `.env.example` as the template.
+1. Start Docker Desktop (it does not start at login). Ollama must also be running for Open WebUI and the assistant.
+2. First time on a machine: `make bootstrap`, then `make doctor`.
+3. Start what you need: `make up` (dashboard DB, Jenkins, SonarQube), or pick: `make up S="open-webui mongodb"`.
+   For app analytics and email testing (JobTrigger): `make bootstrap` once (creates `analytics/.env`), then `make up S="postgres analytics mailpit"`. Crash reporting: `make up S="postgres glitchtip"`.
+4. `make status`, `make logs S=jenkins`, `make down` (everything) or `make down S=sonarqube`.
+5. `make dashboard` runs StackPilot on http://localhost:3001.
+6. `make backup` before upgrades; `make scan` for secrets and image vulnerabilities; `make observability-up` for Grafana.
+7. Never commit secrets: real values go in gitignored `.env` files, with `.env.example` as the template. The pre-commit hooks (`pre-commit install`) block `.env` files and token-like strings.
 
-Note: `script.sh` does not manage Open WebUI, which is started and stopped on its own.
+Everything `make` does is a thin wrapper around `scripts/*.sh`, so `scripts/stack.sh up jenkins` works without make.
+Services: `jenkins sonarqube open-webui postgres mongodb dashboard-db analytics mailpit glitchtip`. Jenkins and SonarQube now bind to
+127.0.0.1; set `JENKINS_BIND=0.0.0.0` or `SONAR_BIND=0.0.0.0` in their `.env` to reach them from other machines.
 
 ### Open WebUI shell command (`webui`)
 
@@ -72,6 +88,26 @@ Full table in `open-webui/README.md`.
 - **Log**: `../mongodb-macos-aarch64--8.2.3/mongodb.log`
 - **Managed by**: `./script.sh` (`mongo-start` / `mongo-stop`) — not containerized, runs as a local process
 
+### 5. Analytics — Umami (`./analytics`)
+- **Purpose**: Cookie-free product analytics (page views, custom events) for lab projects, first JobTrigger
+- **Port**: 3004 (bound to `127.0.0.1`)
+- **Data Location**: database `umami` in the general Postgres (`postgres/`, port 5433); no data folder of its own
+- **Requires**: `postgres` running; `scripts/stack.sh up analytics` creates the role and database (`analytics/scripts/init-db.sh`)
+- **Documentation**: See `analytics/README.md`
+
+### 6. Mailpit (`./mailpit`)
+- **Purpose**: Local mail catcher. Apps send to SMTP 1025; messages appear in a web inbox and are never delivered
+- **Ports**: 1025 (SMTP), 8025 (inbox), both on `127.0.0.1`; `stack-mailpit:1025` from `devops-network`
+- **Data Location**: `./mailpit/data` (disposable, not backed up)
+- **Documentation**: See `mailpit/README.md`
+
+### 7. Error tracking — GlitchTip (`./glitchtip`)
+- **Purpose**: Self-hosted crash and error reporting for lab projects (Sentry-SDK compatible), first JobTrigger
+- **Ports**: 3005 on `127.0.0.1` (set `GLITCHTIP_BIND=0.0.0.0` only to test from a phone on the LAN)
+- **Data Location**: database `glitchtip` in the general Postgres (`postgres/`, port 5433); uploads in `./glitchtip/data/uploads`
+- **Requires**: `postgres` running; `scripts/stack.sh up glitchtip` creates the role and database (`glitchtip/scripts/init-db.sh`)
+- **Documentation**: See `glitchtip/README.md`
+
 ## 🌐 Network Architecture
 
 Jenkins and SonarQube are connected via a shared Docker network: `devops-network`
@@ -96,38 +132,53 @@ MongoDB runs separately as a local process (not on devops-network).
 
 ## 🚀 Quick Start
 
-### Using the control script (recommended)
-```bash
-cd /Users/sithumraigamage/Development/custom-devops-stack
+Run everything from the stack folder (`~/Other/02-DevOps-Lab/custom-devops-stack`). `make help` lists all targets.
 
-./script.sh start         # Starts MongoDB, Jenkins, SonarQube
-./script.sh stop          # Stops SonarQube, Jenkins, MongoDB
-./script.sh mongo-start   # Starts only MongoDB
-./script.sh mongo-stop    # Stops only MongoDB
+```bash
+make bootstrap                 # first time only: .env files with generated passwords, images, dashboard deps, git hooks
+make doctor                    # check Docker, tools, ports and .env files
+make up                        # dashboard DB + Jenkins + SonarQube
+make up S="open-webui mongodb" # pick services
+make up S="postgres analytics mailpit"  # Umami analytics (:3004) + Mailpit email (:1025 SMTP, :8025 inbox)
+make up S="postgres glitchtip"  # GlitchTip crash reporting (:3005)
+make status                    # containers and health
+make logs S=jenkins            # follow one service's logs
+make dashboard                 # StackPilot on http://localhost:3001 (Ctrl+C to stop)
+make observability-up          # Grafana, Prometheus, cAdvisor, Loki, Promtail
+make observability-down        # stop the monitoring stack
+make down                      # stop every service
 ```
 
-### Manual start (per service)
-```bash
-# Start Jenkins
-cd /Users/sithumraigamage/Development/custom-devops-stack/jenkins
-docker compose up -d
-
-# Start SonarQube
-cd /Users/sithumraigamage/Development/custom-devops-stack/sonarqube
-docker compose up -d
-```
-
-### Check Status
-```bash
-docker ps
-pgrep -x mongod
-```
+`script.sh` still works for the local `mongod` (`./script.sh mongo-start`), but `make` is the main entry point.
 
 ### Access Services
-- **Jenkins**: http://localhost:8080
-- **SonarQube**: http://localhost:9000
-- **Open WebUI**: http://localhost:3000
-- **MongoDB**: mongodb://localhost:27018
+| Service | URL | Login |
+|---|---|---|
+| StackPilot dashboard | http://localhost:3001 | admin account created on first visit |
+| Jenkins | http://localhost:8080 | Jenkins admin |
+| SonarQube | http://localhost:9000 | SonarQube admin |
+| Open WebUI | http://localhost:3000 | Open WebUI account |
+| Grafana | http://localhost:3002 | `admin` + `GRAFANA_ADMIN_PASSWORD` set at first start (see `observability/README.md`) |
+| Prometheus | http://localhost:9090 | none (localhost only) |
+| Umami (analytics) | http://localhost:3004 | `admin` / `umami` on first login, change it |
+| Mailpit (email inbox) | http://localhost:8025 | none (localhost only) |
+| GlitchTip (crash reports) | http://localhost:3005 | account created on first visit; then turn sign-up off |
+
+All of these listen on 127.0.0.1 only.
+
+## 🔎 Monitoring
+
+`make observability-up` starts the stack in `observability/`. In Grafana open **Dashboards → Stack → Stack containers** for CPU, memory, memory vs limit, network and logs per container. Loki keeps 7 days of logs, Prometheus 15 days of metrics. The whole monitoring stack uses about 300 MB of RAM. Details and Loki queries: `observability/README.md`.
+
+## 🛡️ Security Scanning
+
+| Command | What it does |
+|---|---|
+| `make scan-secrets` | Gitleaks over files and the full git history (`.gitleaks.toml`; reviewed false positives in `.gitleaksignore`) |
+| `make scan-images` | Trivy: fixable HIGH/CRITICAL vulnerabilities in every stack image, one summary line per image |
+| `make scan` | Both. Reports go to `reports/` (git-ignored); non-zero exit when there are findings |
+
+The same checks run on every commit through the pre-commit hooks (Gitleaks, private keys, `.env` files) and in the Jenkins pipeline template (`jenkins/CI.JenkinsFile`).
 
 ## 🔗 Integration Guide
 
@@ -204,6 +255,9 @@ All data is stored on your local machine:
 | PostgreSQL | Database files | `./sonarqube/postgresql` |
 | Open WebUI | Chats and settings | `./open-webui/data` |
 | Open WebUI | Image backup tar | `./open-webui/backup` |
+| Umami | Analytics events | database `umami` in `stack-postgres` (backed up with Postgres) |
+| Mailpit | Caught emails | `./mailpit/data` |
+| GlitchTip | Error events | database `glitchtip` in `stack-postgres` (backed up with Postgres); uploads in `./glitchtip/data/uploads` |
 | MongoDB | Database files | `../mongodb-macos-aarch64--8.2.3/data/db` |
 
 **Important**: Deleting Docker containers will NOT delete your data!
@@ -224,29 +278,23 @@ All data is stored on your local machine:
 
 ## 📦 Backup Strategy
 
-### Full Backup
 ```bash
-#!/bin/bash
-BACKUP_DATE=$(date +%Y%m%d_%H%M%S)
-STACK_DIR="/Users/sithumraigamage/Development/custom-devops-stack"
-DEV_DIR="/Users/sithumraigamage/Development"
-BACKUP_DIR="$DEV_DIR/backups"
-
-mkdir -p "$BACKUP_DIR"
-
-# Stop services
-"$STACK_DIR/script.sh" stop
-
-# Create backups
-tar -czf "$BACKUP_DIR/jenkins-$BACKUP_DATE.tar.gz" -C "$STACK_DIR/jenkins" jenkins_home
-tar -czf "$BACKUP_DIR/sonarqube-$BACKUP_DATE.tar.gz" -C "$STACK_DIR/sonarqube" data extensions logs postgresql
-tar -czf "$BACKUP_DIR/mongodb-$BACKUP_DATE.tar.gz" -C "$DEV_DIR/mongodb-macos-aarch64--8.2.3" data
-
-# Restart services
-"$STACK_DIR/script.sh" start
-
-echo "Backup completed: $BACKUP_DIR"
+make backup          # writes backups/<timestamp>/ and keeps the newest 7 (BACKUP_KEEP)
+make restore-help    # restore steps per service
 ```
+
+What gets backed up (only what is running for the databases):
+
+| Item | How | File |
+|---|---|---|
+| Jenkins | archive of `jenkins_home` without workspaces and caches | `jenkins_home.tar.gz` (~2.4 GB) |
+| SonarQube DB | `pg_dump` from `sonarqube-db` | `sonarqube-db.sql.gz` |
+| Postgres | `pg_dumpall` from `stack-postgres` | `stack-postgres.sql.gz` |
+| Dashboard DB | `pg_dump` from `stackpilot-postgres` | `stackpilot.sql.gz` |
+| MongoDB | `mongodump` from `stack-mongodb` | `mongodb.archive.gz` |
+| Open WebUI | chats DB, uploads, vector store (model cache excluded) | `open-webui-data.tar.gz` |
+
+Each backup has a `SHA256SUMS` file; check it with `shasum -a 256 -c SHA256SUMS` inside the folder. Start SonarQube, Postgres and MongoDB before `make backup` if you want them included. Backups stay on this Mac, so copy important ones to another disk.
 
 ## 🧹 Maintenance
 
@@ -333,17 +381,13 @@ stack's local `mongod` defaults to 27018 instead.
      devops-network:
        external: true
    ```
-3. Add a `start_<service>` / `stop_<service>` function pair in `script.sh`, and call them from `start_services` / `stop_services`.
+3. Add a line for it to `SERVICES` in `scripts/stack.sh` (and to `IMAGE_TARS` if you keep an offline tar), and to the port table in `docs/TOOLS-ROADMAP.md`.
 4. Document the new service in the **Services** and **Data Persistence** sections above.
 
-## 📝 TODO / Ideas for Later
+## 📝 What's Next
 
-- [ ] Add `status` command to `script.sh` that checks all services at once (docker ps + pgrep mongod)
-- [ ] Add `logs` command to `script.sh` for quick `docker compose logs -f` per service
-- [ ] Add a `restart` command
-- [ ] Wire up automated nightly backups (cron/launchd) using the backup script above
-- [ ] Add MongoDB authentication + connection string env var
-- [ ] Consider moving MongoDB into Docker Compose on `devops-network` for consistency
+All remaining development is in **`docs/backlog.md`** (P1 → P3). Finished work is logged in `docs/CHANGELOG.md`.
+Top of the list: the Jenkins backlog (J1–J10), then P2 (nightly backups, Jenkins metrics, Grafana alerts).
 
 ## 📚 Additional Resources
 
@@ -365,7 +409,7 @@ stack's local `mongod` defaults to 27018 instead.
 - ✅ All data persists in `./jenkins_home` on your machine
 
 ### SonarQube
-- ✅ Running `sonarqube:26.1.0.118079-community`
+- ✅ Running `sonarqube:26.11.0.134175-community`
 - ✅ Added PostgreSQL database (production-ready)
 - ✅ DB password moved out of the committed `docker-compose.yml` into gitignored `sonarqube/.env`
 - ✅ Removed unused volume definitions

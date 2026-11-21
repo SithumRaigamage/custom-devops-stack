@@ -1,0 +1,41 @@
+services:
+  - id: jenkins
+    name: Jenkins
+    desc: CI/CD automation server
+    image: custom-jenkins:latest
+    folder: ~/Other/02-DevOps-Lab/custom-devops-stack/jenkins
+    composeFile: docker-compose.yml
+    url: http://localhost:8080
+    health: http://localhost:8080/login
+    startCommand: jenkins-start
+    stopCommand: jenkins-stop
+  - id: sonarqube
+    name: SonarQube
+    desc: Code quality and security analysis
+    image: sonarqube:26.1.0.118079-community
+    folder: ~/Other/02-DevOps-Lab/custom-devops-stack/sonarqube
+    composeFile: docker-compose.yml
+    url: http://localhost:9000
+    health: http://localhost:9000/api/system/status
+    startCommand: sonar-start
+    stopCommand: sonar-stop
+  - id: open-webui
+    name: Open WebUI
+    desc: Chat UI for your local Ollama models
+    image: ghcr.io/open-webui/open-webui:main
+    folder: ~/Other/02-DevOps-Lab/custom-devops-stack/open-webui
+    composeFile: docker-compose.yml
+    url: http://localhost:3000
+    health: http://localhost:3000/health
+    startCommand: webui
+    stopCommand: webui
+  - id: mongodb
+    name: MongoDb
+    desc: ""
+    image: —
+    folder: ~/Other/02-DevOps-Lab/custom-devops-stack/dashboard
+    composeFile: docker-compose.yml
+    url: http://localhost:27017
+    health: http://localhost:27017/health
+    port: 27017
+    icon: server

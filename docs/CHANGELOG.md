@@ -132,6 +132,16 @@ Notable changes to the stack. Newest first. Commit history has the details.
   SonarQube→Jenkins webhook is configured (J12); the gate itself is `OK` in
   SonarQube.
 
+- **J6 — Commit the stack's Jenkins/SonarQube changes** (`4148c17` design note;
+  no source changes needed): the backlog item was stale — all four files were
+  already committed on `feat/dashboard`. `jenkins/CI.JenkinsFile` template fixes
+  (`710b500`) and scanner-binary switch (`8757da9`), `jenkins/README.md` and
+  `jenkins/PIPELINE_TEMPLATE.md` (`710b500`), and `sonarqube/docker-compose.yml`
+  heaps (`710b500`) plus the P1 #2 image bump (`4acffd6`). Verified the fixes are
+  present by grep (`--volumes-from`, `-Dsonar.token`, `semgrep scan`, heaps
+  768m/768m/1G) and by successful pipeline runs this session. The unrelated
+  `.DS_Store` modification was left alone.
+
 ## 2026-11-14
 
 ### New services

@@ -17,6 +17,19 @@ Notable changes to the stack. Newest first. Commit history has the details.
   baseline used an older snapshot. SonarQube 7/102 is unchanged (separate item #2).
   Images without a 12 Nov report: umami 9/70, mailpit 2/72, glitchtip 10/189.
   open-webui is a floating `:main` tag; pinning it is backlog P2 #17.
+- **P1 #2 — Bump SonarQube** (`4acffd6`): moved from `26.1.0.118079-community` to
+  `26.11.0.134175-community`, the latest 26.x community tag (Docker Hub, pushed
+  2026-11-20). Updated the pin in `sonarqube/docker-compose.yml`, `scripts/stack.sh`
+  (`IMAGE_TARS`), `scripts/scan.sh`, `README.md`, `docs/CURRENT_STATE.md`,
+  `CLAUDE.md` and the `sonarqube-ops` skill note; corrected `sonarqube/README.md`
+  (real image tag, password from `.env`, repo-local paths). Pulled the image and
+  saved `images/sonarqube_26.11.0.134175-community.tar`; the old tar was left in
+  place. Trivy fixable HIGH/CRITICAL: **7/102 → 3/30**. The major-version step
+  required a manual DB migration: took `make backup` first
+  (`backups/20261121-163059`, checksums verified, includes `sonarqube-db.sql.gz`),
+  then ran `POST /api/system/migrate_db`; API status is now `UP` and the log says
+  "SonarQube is operational". Note: `dashboard/services.yaml.bak` still contains
+  the old tag for historical reasons; it is a backup artifact, not live config.
 
 ## 2026-11-14
 

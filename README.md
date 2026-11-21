@@ -387,7 +387,7 @@ stack's local `mongod` defaults to 27018 instead.
 ## 📝 What's Next
 
 All remaining development is in **`docs/backlog.md`** (P1 → P3). Finished work is logged in `docs/CHANGELOG.md`.
-Top of the list: bump SonarQube, test a restore, run `pnpm audit` in `dashboard/`, and run the full API test suite.
+Top of the list: test a restore, run `pnpm audit` in `dashboard/`, and run the full API test suite.
 
 ## 📚 Additional Resources
 

@@ -69,7 +69,7 @@ Items marked **P1** target those directly.
 |---|---|---|---|---|
 | 23 | Update routine | Monthly: check for newer image versions, test, then bump the pinned versions. | P2 | Started: `make scan-images` shows what to update |
 | 24 | Architecture notes | A diagram of how services connect, plus a "what to do if X breaks" runbook. | P2 | Planned |
-| 25 | Commit conventions and CHANGELOG | Keep the existing `type: summary` commit style and record notable changes in a `CHANGELOG`. | P3 | Done: `CHANGELOG.md` |
+| 25 | Commit conventions and CHANGELOG | Keep the existing `type: summary` commit style and record notable changes in a `CHANGELOG`. | P3 | Done: `docs/CHANGELOG.md` |
 | 26 | Resource limits and a memory check | Limits on every container, and a check that the machine has enough free memory before the stack starts. | P2 | Partly: limits on every container; memory check not yet |
 | 27 | Port registry | One table of every port in use, to prevent conflicts (27017 is already taken by an unrelated project). | P2 | Done: see Port allocation in `TOOLS-ROADMAP.md` |
 | 28 | Log rotation | Cap Docker log size (`max-size`, `max-file`) so logs do not fill the disk. | P3 | Planned |

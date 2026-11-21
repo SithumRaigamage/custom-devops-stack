@@ -6,7 +6,7 @@
 #   scripts/stack.sh restart [service...]
 #   scripts/stack.sh status                containers, health and ports
 #   scripts/stack.sh logs <service> [-f]
-#   scripts/stack.sh doctor                check prerequisites, ports and .env files
+#   scripts/stack.sh doctor [service...]   check prerequisites, ports, .env files and memory
 #   scripts/stack.sh bootstrap             first-time setup (env files, images, dashboard deps)
 #   scripts/stack.sh list                  service names
 #
@@ -173,6 +173,45 @@ cmd_logs() {
 
 port_in_use() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
+# Prints "<sum of compose memory limits in bytes> <containers without a limit, comma-separated>".
+mem_limits() {
+  local svc filter folder
+  for svc in "$@"; do
+    folder="$(field "$svc" folder)"; filter="$(field "$svc" filter)"
+    # shellcheck disable=SC2086
+    (cd "$ROOT/$folder" && docker compose config --format json $filter 2>/dev/null) || true
+  done | python3 -c '
+import json, sys
+total, unlimited = 0, []
+data = sys.stdin.read()
+dec, i = json.JSONDecoder(), 0
+while i < len(data):
+    while i < len(data) and data[i].isspace(): i += 1
+    if i >= len(data): break
+    cfg, i = dec.raw_decode(data, i)
+    for name, svc in cfg.get("services", {}).items():
+        mem = ((svc.get("deploy") or {}).get("resources") or {}).get("limits", {}).get("memory")
+        if mem: total += int(mem)
+        else: unlimited.append(name)
+print(total, ",".join(unlimited) or "-")'
+}
+
+# Warn when the services about to start are allowed more memory than Docker Desktop has.
+check_memory() {
+  local targets=("$@"); [ ${#targets[@]} -gt 0 ] || targets=("${DEFAULT_UP[@]}")
+  local docker_mem limits unlimited
+  docker_mem="$(docker info --format '{{.MemTotal}}' 2>/dev/null || echo 0)"
+  [ "$docker_mem" -gt 0 ] || { warn "memory check skipped (Docker not running)"; return 0; }
+  read -r limits unlimited < <(mem_limits "${targets[@]}")
+  gib() { awk -v b="$1" 'BEGIN { printf "%.1f GiB", b / 1073741824 }'; }
+  [ "$unlimited" = "-" ] || warn "no memory limit (not counted): ${unlimited//,/, }"
+  if [ "$limits" -gt "$docker_mem" ]; then
+    warn "memory limits of ${targets[*]} total $(gib "$limits"), more than Docker Desktop's $(gib "$docker_mem"). Raise Docker's memory or start fewer services."
+    return 1
+  fi
+  ok "memory: limits of ${targets[*]} total $(gib "$limits") of Docker Desktop's $(gib "$docker_mem")"
+}
+
 cmd_doctor() {
   local failed=0
   command -v docker >/dev/null 2>&1 && ok "docker installed" || { warn "docker missing"; failed=1; }
@@ -213,6 +252,8 @@ cmd_doctor() {
     else warn "image $image not present and no tar at $tar"; fi
   done
 
+  if docker info >/dev/null 2>&1; then check_memory "$@" || failed=1; fi
+
   [ $failed -eq 0 ] && ok "All checks passed" || { warn "Some checks need attention"; return 1; }
 }
 
@@ -250,7 +291,7 @@ main() {
     restart) cmd_down "$@"; cmd_up "$@" ;;
     status|ps) cmd_status ;;
     logs) cmd_logs "$@" ;;
-    doctor) cmd_doctor ;;
+    doctor) cmd_doctor "$@" ;;
     bootstrap) cmd_bootstrap ;;
     list) names; echo ;;
     help|-h|--help) sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;

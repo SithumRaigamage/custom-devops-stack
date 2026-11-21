@@ -3,6 +3,14 @@ services:
     image: custom-jenkins:latest
     restart: unless-stopped
 
+    # Healthy once the web UI answers; plugins and init can take a couple of minutes.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
     # Reachable from localhost and LAN by default. Set JENKINS_BIND to a
     # specific interface address when a narrower binding is required.
     ports:

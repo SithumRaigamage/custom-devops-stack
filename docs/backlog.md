@@ -32,11 +32,9 @@ session; start it first if the containers are down.
 | 12 | Dashboard: scan results page | Run `make scan` and show the Gitleaks/Trivy summary per image with history | Dashboard |
 | 13 | Jenkins Configuration as Code | Plugins, jobs and settings in the repo so Jenkins can be rebuilt from scratch | CI/CD |
 | 14 | Least-privilege SonarQube token | Dedicated SonarQube user and token for Jenkins instead of the admin token; record expiry and rotation | Security |
-| 15 | Fail on quality gate + coverage templates | Gate failure fails the build; `sonar-project.properties` templates with coverage paths | CI/CD |
-| 16 | Hello-World-Node-JS SonarQube URL | Uses `host.docker.internal:9000`; switch to `http://sonarqube:9000` now that SonarQube binds to localhost | CI/CD |
+| 16 | Hello-World-Node-JS SonarQube URL | Uses `host.docker.internal:9000`; switch to the container URL `http://sonarqube:9000` on `devops-network`, like the other jobs | CI/CD |
 | 17 | Pinned versions file | One `versions.env` for every image tag (Open WebUI `:main`, `mongo:7`, Postgres are floating) | Reproducibility |
-| 18 | Health checks in compose | `healthcheck` for Jenkins, SonarQube, Open WebUI, Postgres so `depends_on` waits for readiness | Reliability |
-| 19 | Memory check in `make doctor` | Warn when Docker Desktop's memory is below the sum of the limits of the services being started | Reliability |
+| 32 | Memory limits on the remaining services | `make doctor` reports no limit on dashboard-db (`postgres`), Open WebUI, Postgres and MongoDB, so their memory isn't counted; add `deploy.resources.limits` sized from Grafana's "Stack containers" dashboard | Reliability |
 | 20 | Credentials policy doc | Where each secret lives, rotation, token types | Security |
 | 21 | Runbook and architecture diagram | How services connect; what to do when X breaks | Docs |
 
@@ -47,7 +45,6 @@ session; start it first if the containers are down.
 | 22 | Docker log rotation | `max-size` / `max-file` on every service | Maintenance |
 | 23 | MongoDB authentication | Root user from `.env`, connection string in docs | Security |
 | 24 | Retire `script.sh` and the local `mongod` | Everything through `make`; MongoDB already runs in Docker | Maintenance |
-| 25 | Monthly update routine | Check new image versions, scan, bump pins | Maintenance |
 | 26 | Private registry | Nexus or Harbor; replaces the `images/` tar cache | Platform |
 | 27 | Reverse proxy | Traefik or Caddy with `*.localhost` names instead of ports | Platform |
 | 28 | Self-hosted Git | Gitea triggering Jenkins builds | Platform |

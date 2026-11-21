@@ -110,6 +110,17 @@ For Jenkins integration:
 3. Generate a token
 4. Use this token in Jenkins credentials
 
+## 📐 Quality gate and profiles as code
+
+- `scripts/setup-quality.sh` creates the "Industry Standard" gate and "Company Way"
+  profiles and makes them the defaults.
+- `scripts/export-config.sh` exports them to `config/` (gate conditions as JSON, one
+  profile backup XML per language). Re-run and commit after changing either in the UI.
+  Restore a profile with Quality Profiles → Restore. Both scripts read `SONAR_TOKEN`
+  from `.env`.
+- Health check: the container is `healthy` only when `api/system/status` reports `UP`,
+  and SonarQube waits for `sonarqube-db` to be healthy before starting.
+
 ## 📦 Backup
 
 To backup all SonarQube data:

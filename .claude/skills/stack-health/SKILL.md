@@ -21,7 +21,7 @@ description: Diagnose stack health using doctor, status, logs, and observability
 2. Use `make doctor`, `make status`, and `make logs S=<service>` before ad hoc Docker commands.
 3. Never print `.env` values, DSNs, tokens, passwords, or session secrets.
 4. Do not restart, stop, or remove data-bearing containers or volumes without approval.
-5. Treat docs that claim Jenkins/SonarQube bind to `127.0.0.1` as potentially stale: verify the compose defaults and actual `.env` before making network claims.
+5. Jenkins and SonarQube default to `0.0.0.0` (LAN reachable) by design; other services bind to `127.0.0.1`. Verify the compose defaults and actual `.env` before making network claims.
 
 ## Steps
 1. Run `make doctor` and capture failed checks.

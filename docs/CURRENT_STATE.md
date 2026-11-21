@@ -1,7 +1,7 @@
 # Current State Audit — custom-devops-stack
 
 > **Update 2026-11-12:** much of this audit has since been addressed: one entry point (`make` / `scripts/stack.sh`),
-> bootstrap with generated passwords, localhost binding for Jenkins and SonarQube, `make backup` with retention,
+> bootstrap with generated passwords, configurable binding for Jenkins and SonarQube (default 0.0.0.0, by choice; see README), `make backup` with retention,
 > Gitleaks + Trivy (`make scan`, pre-commit, CI stages), the observability stack, and the StackPilot dashboard
 > with a full audit log. See `docs/PRACTICES-ROADMAP.md` and `docs/TOOLS-ROADMAP.md` for live status.
 > The resource figures below are from the original audit on the earlier machine; re-measure with `make doctor`
@@ -98,4 +98,4 @@ Don't start with Kubernetes or the observability stack — start by making the t
 5. **Wire Trivy into a Jenkins pipeline stage** (filesystem + image scan) — it's already installed in the image, so this is the highest-value/lowest-cost item from the entire 48-section list.
 6. Only after 1–4 are done and the stack starts reliably: pick **one** next addition based on what you actually need next (a Git server if you want to self-host repos, or a metrics/logs setup if you want visibility) rather than adding the full observability + GitOps + Kubernetes + identity + secrets stack at once. On an 8 GB laptop, each additional always-on service should be a deliberate trade-off against what's already running.
 
-None of the above has been implemented yet — this file is the audit only, per your request to document first.
+*Historical (2026-08-09):* when written, none of the above had been implemented. Items 1–5 have since been done (see the update note at the top and `docs/CHANGELOG.md`); open work lives in `docs/backlog.md`.

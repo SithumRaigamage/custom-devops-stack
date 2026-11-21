@@ -41,8 +41,9 @@ How to work here:
 7. Never commit secrets: real values go in gitignored `.env` files, with `.env.example` as the template. The pre-commit hooks (`pre-commit install`) block `.env` files and token-like strings.
 
 Everything `make` does is a thin wrapper around `scripts/*.sh`, so `scripts/stack.sh up jenkins` works without make.
-Services: `jenkins sonarqube open-webui postgres mongodb dashboard-db analytics mailpit glitchtip`. Jenkins and SonarQube now bind to
-127.0.0.1; set `JENKINS_BIND=0.0.0.0` or `SONAR_BIND=0.0.0.0` in their `.env` to reach them from other machines.
+Services: `jenkins sonarqube open-webui postgres mongodb dashboard-db analytics mailpit glitchtip`. Jenkins and SonarQube bind to
+`0.0.0.0` by default, so they are reachable from this Mac **and** other devices on the same Wi-Fi; set
+`JENKINS_BIND=127.0.0.1` or `SONAR_BIND=127.0.0.1` in their `.env` for Mac-only access. Every other service binds to 127.0.0.1.
 
 ### Open WebUI shell command (`webui`)
 

@@ -21,8 +21,9 @@ nothing is intentionally internet-exposed. Treat the repository, its compose fil
   single script entry point; shell functions are supported only as an opt-in dashboard
   "Run in shell" mode.
 - Documentation may drift. Prefer executable files over README prose. Known stale text:
-  - README/docs claim Jenkins and SonarQube bind to `127.0.0.1`, but their compose files
-    default `JENKINS_BIND`/`SONAR_BIND` to `0.0.0.0`. Verify actual config before claims.
+  - Jenkins and SonarQube deliberately default `JENKINS_BIND`/`SONAR_BIND` to `0.0.0.0`
+    (user decision 2026-11-21: needed from the Mac and Wi-Fi). Docs were corrected the
+    same day; still verify the compose files and `.env` before network claims.
   - `sonarqube/README.md` was corrected on 2026-11-21 (it had an old image tag,
     hard-coded path, and literal example password); the compose file pins
     `sonarqube:26.11.0.134175-community` and reads the password from gitignored `.env`.
@@ -44,8 +45,9 @@ nothing is intentionally internet-exposed. Treat the repository, its compose fil
 
 ## Network posture
 
-- Default binding is loopback (`127.0.0.1`). Exposing a service with
-  `*_BIND=0.0.0.0` requires explicit approval and must be reverted after testing.
+- Default binding is loopback (`127.0.0.1`). Exceptions: Jenkins and SonarQube default
+  to `0.0.0.0` by the user's choice (LAN access). Exposing any other service requires
+  explicit approval and must be reverted after testing.
 - Keep `GLITCHTIP_DOMAIN=http://localhost:3005` and DSNs as `localhost`; the iPhone
   script rewrites the host. Hand LAN/iPhone switching to the `network-switch` skill.
 - Shared container network is `devops-network`. Identify attached containers before

@@ -142,7 +142,7 @@ Figures are estimates, not measurements. Measure with cAdvisor once it is runnin
 
 ## Port allocation
 
-All bound to 127.0.0.1 unless noted.
+All bound to 127.0.0.1 except Jenkins and SonarQube, which default to 0.0.0.0 (Mac and Wi-Fi).
 
 | Port | Service |
 |---|---|
@@ -154,11 +154,11 @@ All bound to 127.0.0.1 unless noted.
 | 4000 | StackPilot API |
 | 5432 | StackPilot dashboard Postgres |
 | 5433 | General-purpose Postgres (`postgres/`) |
-| 8080, 50000 | Jenkins (`JENKINS_BIND` to expose) |
+| 8080, 50000 | Jenkins, 0.0.0.0 (`JENKINS_BIND=127.0.0.1` for Mac only) |
 | 1025 | Mailpit SMTP |
 | 8025 | Mailpit inbox |
 | 8081 | cAdvisor |
-| 9000 | SonarQube (`SONAR_BIND` to expose) |
+| 9000 | SonarQube, 0.0.0.0 (`SONAR_BIND=127.0.0.1` for Mac only) |
 | 9090 | Prometheus |
 | 11434 | Ollama (host) |
 | 27017 | MongoDB (`mongodb/`, Docker). Note the separate local `mongod` from `script.sh` uses 27018 |

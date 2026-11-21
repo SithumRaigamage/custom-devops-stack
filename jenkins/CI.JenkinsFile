@@ -603,15 +603,26 @@ pipeline {
                     // 'SonarServer' is the SonarQube server configured in Jenkins
                     withCredentials([string(credentialsId: env.SONAR_AUTH_TOKEN_ID, variable: 'SONAR_AUTH_TOKEN')]) {
                         withSonarQubeEnv('{{SONAR_SERVER_NAME}}') {
+                            // A repo's own sonar-project.properties (see jenkins/sonar-templates/)
+                            // wins; otherwise use the defaults below, plus lcov coverage if present.
                             sh """
-                                \"${scannerHome}/bin/sonar-scanner\" \
-                                -Dproject.settings=/dev/null \
+                                if [ -f sonar-project.properties ]; then
+                                    echo 'Using sonar-project.properties from the repository'
+                                    set -- -Dproject.settings=sonar-project.properties
+                                else
+                                    set -- -Dproject.settings=/dev/null -Dsonar.sources=src \
+                                        '-Dsonar.exclusions=node_modules/**,dist/**,**/*.spec.ts'
+                                    if [ -f coverage/lcov.info ]; then
+                                        set -- "\$@" -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+                                    else
+                                        echo 'No coverage/lcov.info: the 80% new-code coverage condition will fail'
+                                    fi
+                                fi
+                                \"${scannerHome}/bin/sonar-scanner\" "\$@" \
                                 -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                                 -Dsonar.projectName=\"${SONAR_PROJECT_NAME}\" \
                                 -Dsonar.host.url=${SONAR_SERVER_URL} \
                                 -Dsonar.token=\"\$SONAR_AUTH_TOKEN\" \
-                                -Dsonar.sources=src \
-                                -Dsonar.exclusions=node_modules/**,dist/**,**/*.spec.ts \
                                 -Dsonar.javascript.node.maxspace=768
                             """
                         }

@@ -10,7 +10,10 @@ structure changes, not new tools. For new tools, see [TOOLS-ROADMAP.md](TOOLS-RO
 - Secrets live only in gitignored `.env` files.
 - Each item follows the usual flow: audit, plan, approval, build, verify, document.
 
-Status key: **Done** · **Planned** · **Idea**. Priority: **P1** do first, **P2** next, **P3** later.
+Status key: **Done** · **Partly** · **Planned** · **Idea**. Priority: **P1** do first, **P2** next, **P3** later.
+
+**Open work is tracked in [backlog.md](backlog.md)**, which is the source of truth; this
+file explains the reasoning and mirrors status. Where they disagree, the backlog wins.
 
 ## Why these exist
 
@@ -38,10 +41,10 @@ Items marked **P1** target those directly.
 | 6 | Pre-commit checks | A git hook that blocks `.env` files and token-like strings. This would have stopped the `.env.example` leak. | P1 | Done: `.pre-commit-config.yaml` (Gitleaks, private keys, `.env` block) |
 | 7 | Credentials policy | One short doc: where secrets live, how they rotate, and which SonarQube tokens are User, Project or Global Analysis tokens. | P1 | Planned |
 | 8 | Least privilege | Give Jenkins its own SonarQube user and its own token instead of reusing the admin token. | P2 | Planned |
-| 9 | Health checks | Add `healthcheck` entries to compose files so `depends_on` waits until a service is ready. | P2 | Planned |
+| 9 | Health checks | Add `healthcheck` entries to compose files so `depends_on` waits until a service is ready. | P2 | Done: every service has one; SonarQube waits for its DB |
 | 10 | Token expiry and rotation | Give every token an expiry date and record a rotation schedule. | P2 | Planned |
 | 11 | Protect the default branch | Require review and passing checks before merging to `main`, once the repo has collaborators or CI. | P3 | Idea |
-| 12 | Bind services to localhost | Publish ports as `127.0.0.1:PORT:PORT` so services are not reachable from the network. | P2 | Done: Jenkins, SonarQube and all new services bind to 127.0.0.1 (`JENKINS_BIND` / `SONAR_BIND` to override) |
+| 12 | Bind services to localhost | Publish ports as `127.0.0.1:PORT:PORT` so services are not reachable from the network. | P2 | Done, with an exception: every service binds to 127.0.0.1 except Jenkins and SonarQube, which default to 0.0.0.0 by choice so they are reachable over Wi-Fi (`JENKINS_BIND` / `SONAR_BIND=127.0.0.1` for Mac only) |
 | 13 | Remove exposed history | If a secret was ever pushed, revoke it first, then decide whether to rewrite history. | P1 | Planned |
 
 ## 3. Backup and recovery
@@ -49,28 +52,28 @@ Items marked **P1** target those directly.
 | # | Item | What to do | Priority | Status |
 |---|---|---|---|---|
 | 14 | Backup script | Back up `jenkins/jenkins_home` and `sonarqube/postgresql` to a dated archive outside the repo. | P1 | Done: `make backup` (`scripts/backup.sh`, DB dumps + archives + checksums) |
-| 15 | Restore test | Restore a backup into a scratch location regularly. A backup that has never been restored is unproven. | P2 | Next: run `make restore-help` steps on a copy |
+| 15 | Restore test | Restore a backup into a scratch location regularly. A backup that has never been restored is unproven. | P2 | Done: both restore paths proved on copies (CHANGELOG, P1 #3); repeat after major upgrades |
 | 16 | Backup retention | Keep for example 7 daily and 4 weekly archives, and delete older ones only by rule. | P3 | Done: newest 7 kept (`BACKUP_KEEP`) |
-| 17 | Export configuration | Keep exported SonarQube gates, profiles and Jenkins config in the repo, so settings survive a lost volume. | P2 | Planned |
+| 17 | Export configuration | Keep exported SonarQube gates, profiles and Jenkins config in the repo, so settings survive a lost volume. | P2 | Partly: SonarQube via `sonarqube/scripts/export-config.sh` → `sonarqube/config/`; Jenkins config waits for JCasC (#3) |
 
 ## 4. CI/CD design
 
 | # | Item | What to do | Priority | Status |
 |---|---|---|---|---|
 | 18 | Shared pipeline template | One reusable Jenkinsfile for every project: build, test, SonarQube scan, quality-gate check. | P2 | Done: `jenkins/CI.JenkinsFile` + `PIPELINE_TEMPLATE.md` |
-| 19 | Fail on quality gate | A failed SonarQube quality gate fails the build. | P2 | Planned |
-| 20 | Scanner templates | A `sonar-project.properties` template for each language in use, including coverage report paths. | P2 | Planned |
-| 21 | Coverage by default | Make every template produce a coverage report, otherwise the 80% gate condition always fails. | P2 | Planned |
+| 19 | Fail on quality gate | A failed SonarQube quality gate fails the build. | P2 | Done: `CI.JenkinsFile` errors when the gate is not `OK` (needs the SonarQube webhook, backlog J12, or the wait times out) |
+| 20 | Scanner templates | A `sonar-project.properties` template for each language in use, including coverage report paths. | P2 | Done: `jenkins/sonar-templates/` (Node/TS, Python, Maven); no Dart analyzer in SonarQube Community |
+| 21 | Coverage by default | Make every template produce a coverage report, otherwise the 80% gate condition always fails. | P2 | Partly: `CI.JenkinsFile` sends `coverage/lcov.info` when present and warns when missing; each project's test script must still produce it |
 | 22 | Build caching | Cache dependency downloads (Maven, npm, pip) between builds to keep builds fast. | P3 | Idea |
 
 ## 5. Maintenance and documentation
 
 | # | Item | What to do | Priority | Status |
 |---|---|---|---|---|
-| 23 | Update routine | Monthly: check for newer image versions, test, then bump the pinned versions. | P2 | Started: `make scan-images` shows what to update |
+| 23 | Update routine | Monthly: check for newer image versions, test, then bump the pinned versions. | P2 | Done: [update-routine.md](update-routine.md) |
 | 24 | Architecture notes | A diagram of how services connect, plus a "what to do if X breaks" runbook. | P2 | Planned |
 | 25 | Commit conventions and CHANGELOG | Keep the existing `type: summary` commit style and record notable changes in a `CHANGELOG`. | P3 | Done: `docs/CHANGELOG.md` |
-| 26 | Resource limits and a memory check | Limits on every container, and a check that the machine has enough free memory before the stack starts. | P2 | Partly: limits on every container; memory check not yet |
+| 26 | Resource limits and a memory check | Limits on every container, and a check that the machine has enough free memory before the stack starts. | P2 | Partly: `make doctor [S=...]` checks the sum of limits against Docker's memory (done). Limits are missing on dashboard-db, Open WebUI, Postgres and MongoDB, which `doctor` names |
 | 27 | Port registry | One table of every port in use, to prevent conflicts (27017 is already taken by an unrelated project). | P2 | Done: see Port allocation in `TOOLS-ROADMAP.md` |
 | 28 | Log rotation | Cap Docker log size (`max-size`, `max-file`) so logs do not fill the disk. | P3 | Planned |
 | 29 | Disk usage review | Regularly review `docker system df` and prune unused images and volumes, with care for data volumes. | P3 | Idea |

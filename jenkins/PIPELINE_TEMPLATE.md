@@ -11,6 +11,7 @@ This document describes the standardized Jenkins pipeline template stored at `je
 
 - `jenkins/CI.JenkinsFile` — Pipeline template (Groovy declarative pipeline).
 - `jenkins/PIPELINE_TEMPLATE.md` — This documentation.
+- `jenkins/sonar-templates/` — `sonar-project.properties` templates with coverage paths (Node/TS, Python, Maven).
 
 ## Required Jenkins configuration
 
@@ -69,6 +70,15 @@ containers on the host's Docker daemon. They mount the workspace with
 `--volumes-from "$(hostname)" -w "$WORKSPACE"`, not `-v "$WORKSPACE:/repo"`: from
 the host, the Jenkins workspace path does not exist, and a `-v` mount of it is
 silently empty. See `README.md` → "Running tools in containers".
+
+## Changes (2026-11-21)
+
+- SonarQube stage uses the repository's `sonar-project.properties` when present (copy one
+  from `jenkins/sonar-templates/`). Without one it keeps the old defaults (`src`, the same
+  exclusions, now quoted so the shell can't expand the globs) and adds
+  `coverage/lcov.info` when it exists, warning when it doesn't.
+- A quality gate that isn't `OK` already fails the build. The SonarQube webhook (backlog
+  J12) is still needed, otherwise `waitForQualityGate()` times out.
 
 ## Changes (2026-11-19)
 

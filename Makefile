@@ -15,8 +15,8 @@ help: ## Show this help
 bootstrap: ## First-time setup: .env files, images, dashboard deps, git hooks
 	@$(STACK) bootstrap
 
-doctor: ## Check Docker, tools, ports and .env files
-	@$(STACK) doctor
+doctor: ## Check Docker, tools, ports, .env files and memory (S=services to size)
+	@$(STACK) doctor $(S)
 
 up: ## Start services (default: dashboard-db jenkins sonarqube)
 	@$(STACK) up $(S)

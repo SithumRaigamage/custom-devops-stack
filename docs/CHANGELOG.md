@@ -4,6 +4,34 @@ Notable changes to the stack. Newest first. Commit history has the details.
 
 ## 2026-11-21
 
+### Reliability and docs (P2-01, design: `docs/design/P2-01-partly-done-items-and-doc-fixes.md`)
+- **#18 — Health checks** (`COMMIT`): Jenkins (`/login`), SonarQube (`api/system/status` = `UP`),
+  SonarQube DB (`pg_isready`), Open WebUI (`/health`) and all five observability containers
+  now have health checks; SonarQube waits for its DB to be healthy. Commands use only tools
+  present in each image (Promtail has no curl/wget, so it uses bash `/dev/tcp`). Verified:
+  after `make backup` and restart, all nine containers reported `healthy` after failing
+  during startup, and SonarQube's API returned `UP`.
+- **#19 — Memory check in `make doctor`** (`COMMIT`): `make doctor [S=...]` sums the compose
+  memory limits of the services to start (default `dashboard-db jenkins sonarqube`) against
+  Docker Desktop's memory and names containers without a limit. Verified: 8.0 of 10.6 GiB
+  passes; a simulated 4 GiB Docker fails with a warning. Found that dashboard-db, Open
+  WebUI, Postgres and MongoDB have no limit → new backlog #32.
+- **#15 — Quality gate + coverage templates** (`COMMIT`): the gate already failed the build;
+  `CI.JenkinsFile` now uses a repo's `sonar-project.properties` when present and sends
+  `coverage/lcov.info` otherwise. Templates for Node/TS, Python and Maven in
+  `jenkins/sonar-templates/`. No Flutter template: the SonarQube Community image has no Dart
+  analyzer. Verified the scanner arguments for all three cases with a stub scanner; the
+  template itself was not run in Jenkins.
+- **Export SonarQube config** (Practices #17, `COMMIT`): `sonarqube/scripts/export-config.sh`
+  writes the gate and 24 "Company Way" profiles to `sonarqube/config/` (no secrets; checked).
+  Jenkins config export remains with JCasC (#13).
+- **#25 — Monthly update routine** (`COMMIT`): `docs/update-routine.md`.
+- **Doc fixes:** Jenkins and SonarQube default to `0.0.0.0` by the user's choice (Mac and
+  Wi-Fi); README, roadmaps, CLAUDE.md and the stack-health skill said `127.0.0.1`. The
+  2026-11-12 entry below claiming 127.0.0.1 was wrong. Also: restore test marked done in the
+  practices roadmap, CURRENT_STATE §8 marked historical, "limits on every container"
+  corrected, and the practices roadmap now points to `backlog.md` as the source of truth.
+
 ### Security
 - **P1 #1 — Image vulnerability fixes** (`aeaf624`): rebuilt `custom-jenkins:latest` with
   `docker build --pull` (gosu 1.19 verified in the image), re-saved the local

@@ -10,6 +10,12 @@ services:
     image: prom/prometheus:v3.0.1
     container_name: obs-prometheus
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -30,6 +36,12 @@ services:
     image: ghcr.io/google/cadvisor:v0.60.4
     container_name: obs-cadvisor
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     privileged: true
     command:
       - --docker_only=true
@@ -56,6 +68,12 @@ services:
     image: grafana/loki:3.3.2
     container_name: obs-loki
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     command: -config.file=/etc/loki/loki.yml
     ports:
       - "127.0.0.1:3100:3100"
@@ -71,6 +89,13 @@ services:
     image: grafana/promtail:3.3.2
     container_name: obs-promtail
     restart: unless-stopped
+    # No curl/wget in this image; bash's /dev/tcp reads /ready instead.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9080 && printf 'GET /ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     command: -config.file=/etc/promtail/promtail.yml
     volumes:
       - ./promtail/promtail.yml:/etc/promtail/promtail.yml:ro
@@ -85,6 +110,12 @@ services:
     image: grafana/grafana:11.4.0
     container_name: obs-grafana
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in observability/.env (copy .env.example)}

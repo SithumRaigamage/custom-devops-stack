@@ -46,3 +46,23 @@
   analysis stage to run without 401 and the build to end `SUCCESS`.
 - Confirm `sonarqube/.env` is unchanged and no secret value appears in the
   report, commit, or docs.
+
+## Final outcome (2026-11-21)
+- Read-only checks before the change: `.env` token → HTTP 200 `{"valid":true}`;
+  Jenkins credential `sonarqube-token` → HTTP 200 `{"valid":false}`. The exact
+  `.env` token value appears in **0** Jenkins build logs, so no rotation or
+  revocation was needed.
+- With approval, the credential value was replaced through Jenkins'
+  credentials store API using a mode-600 temp file copied into the Jenkins
+  container; no value was printed or entered in chat. Post-change check from
+  Jenkins: HTTP 200 `{"valid":true}`. Temp files were removed from the container
+  and host and their absence verified.
+- Backend #6 (`BRANCH=docs/product-proposals-phase-26`, `SONARQUBE_SCAN=true`,
+  `SEND_EMAIL=false`): the SonarScanner run completed with `ANALYSIS SUCCESSFUL`
+  and `EXECUTION SUCCESS` in ~25 s — **no 401**. `waitForQualityGate()` then
+  timed out after 5 min because no SonarQube→Jenkins webhook is configured
+  (`/api/webhooks/list?project=JobTrigger` → `[]`); the build ended `ABORTED`
+  despite the Jenkinsfile's `catchError`. The quality gate itself is `OK` in
+  SonarQube (4 conditions), and the analysis task completed `SUCCESS`.
+- J5 closes as **401 resolved**. The webhook/`waitForQualityGate()` timeout is a
+  separate problem, tracked as **J12**.

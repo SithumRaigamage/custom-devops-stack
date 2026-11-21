@@ -117,6 +117,21 @@ Notable changes to the stack. Newest first. Commit history has the details.
   `File::Copy` (exit 134/SIGABRT); no OOM event, reproducible under qemu/amd64.
   J4 closes as verified-with-finding; the release crash is tracked as **J11**.
 
+- **J5 — Fix the Jenkins `sonarqube-token` 401** (`e800c9d` design note; no tracked
+  source changes): read-only checks proved the gitignored `sonarqube/.env` token
+  valid (`{"valid":true}`) while the Jenkins credential with the same ID was
+  invalid (`{"valid":false}`) — the cause of backend #5's scanner `HTTP 401`.
+  With approval, replaced the Jenkins `StringCredentialsImpl` value with the
+  existing valid token via the Jenkins credentials store API, using a mode-600
+  temp file so the value was never printed or entered in chat; removed and
+  verified the temp files in both the container and host. No new token was
+  generated or revoked (the value appears in 0 build logs). Post-change Jenkins
+  check: `{"valid":true}`. Backend #6 with `SONARQUBE_SCAN=true` reported
+  `ANALYSIS SUCCESSFUL` / `EXECUTION SUCCESS` with no 401. The build ended
+  `ABORTED` for a separate reason — `waitForQualityGate()` timed out because no
+  SonarQube→Jenkins webhook is configured (J12); the gate itself is `OK` in
+  SonarQube.
+
 ## 2026-11-14
 
 ### New services

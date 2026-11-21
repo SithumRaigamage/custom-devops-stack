@@ -15,13 +15,13 @@ session; start it first if the containers are down.
 
 | # | Item | Why / notes | Area |
 |---|---|---|---|
-| J5 | Regenerate `sonarqube-token` | SonarQube returns 401 for the stored token, so every job's Sonar stage fails (backend #5). New token in SonarQube → update the `sonarqube-token` credential in Jenkins (same ID), then re-run backend with Sonar on. Ties in with #14 | Security |
 | J6 | Commit the stack's Jenkins/SonarQube changes | Uncommitted on `feat/dashboard`: `jenkins/CI.JenkinsFile` (template now compiles; `--volumes-from` mounts; `sonar.token`; semgrep fix), `jenkins/README.md`, `jenkins/PIPELINE_TEMPLATE.md`, `sonarqube/docker-compose.yml` (heaps 768M/768M/1G: at 1G/1G/2G Elasticsearch was killed, exit 137) | Docs |
 | J7 | Executors 2 → 3 | Lets a quick job run beside the two heavy ones. Not 4: two Flutter builds plus SonarQube already fill Docker's ~10.6 GB | CI/CD |
 | J8 | Revoke the temporary Jenkins API token | It was shared during the session; create a new one when needed | Security |
 | J9 | Optional JobTrigger setup | `CI_RECEIVER_EMAIL` global property (email receiver), `codecov-token` credential (enables `UPLOAD_CODECOV`), a `macos` agent (enables `BUILD_IOS`), and a decision on `trivy fs` license findings (LGPL-3.0 in JobTrigger-Web, marks security UNSTABLE) | CI/CD |
 | J10 | Merge the JobTrigger `Jenkins/` folder to `develop` | Jobs build from `docs/product-proposals-phase-26`; after the merge, switch each job's branch to `*/develop` | CI/CD |
 | J11 | Fix the release APK's Dart `File::Copy` EINTR abort | `JobTrigger-release-CD` #5 and #6 both abort in `compileFlutterBuildRelease` with `file_linux.cc: 492: Unexpected EINTR errno` (Dart 3.13.7, exit 134) under the amd64/qemu Flutter image — reproducible, not memory-related. Debug APK passes. Investigate a Dart/Flutter workaround or an amd64-native agent; re-run the release build when fixed | CI/CD |
+| J12 | Configure the SonarQube → Jenkins webhook | No webhook is configured for project `JobTrigger`, so `waitForQualityGate()` polls for 5 min and times out; backend #6 ended ABORTED even though the analysis succeeded and the gate is `OK`. Add a project/global webhook pointing at Jenkins' `/sonarqube-webhook/`, then re-run a backend build with Sonar on | CI/CD |
 
 ## P2 — Soon
 

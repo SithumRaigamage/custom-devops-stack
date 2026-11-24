@@ -2,6 +2,28 @@
 
 Notable changes to the stack. Newest first. Commit history has the details.
 
+## 2026-11-24
+
+### SonarQube webhook, job branch, memory limits (P2-02, design: `docs/design/P2-02-sonar-webhook-and-memory-limits.md`)
+- **J12 — SonarQube → Jenkins webhook** (runtime config; docs `b045eb19`): a global, HMAC-signed
+  webhook `Jenkins` → `http://jenkins:8080/sonarqube-webhook/`. SonarQube 26.x refuses private
+  addresses, so `sonar.validateWebhooks` is now `false` (user-approved, recorded as a caveat).
+  Jenkins credential `sonarqube-webhook-secret` is `SonarServer`'s webhook secret; the value is
+  in gitignored `sonarqube/.env` and was never printed. Verified: backend #8's
+  `waitForQualityGate()` answered in about 1 s instead of timing out at 5 min, and the
+  delivery log shows HTTP 200. The gate is `ERROR` on `develop` (new backlog J13).
+- **J10 — Jobs on `develop`** (runtime config): PR #149 had been merged into `develop` on
+  2026-11-21 and the old branch deleted, which broke all six JobTrigger jobs (backend #7: missing
+  remote ref). Switched all six to `*/develop` through Jenkins' API after backing up their
+  configs to `backups/jenkins-job-configs-pre-J10-20261124-184959/`. Backend #8 built and
+  tested `a93130d` from `develop`.
+- **#16 — Hello-World-Node-JS SonarQube URL:** already done. The job uses
+  `http://sonarqube:9000`, and build #40 used it. Closed without a change.
+- **#32 — Memory limits on the remaining services** (`b045eb19`): dashboard-db 512M,
+  postgres 512M, mongodb 1G, open-webui 2G, sized from measured `memory.peak` (82/72/247/789
+  MiB). Verified: all four recreated and healthy, `docker stats` shows the limits, and doctor
+  lists no unlimited containers.
+
 ## 2026-11-21
 
 ### Reliability and docs (P2-01, design: `docs/design/P2-01-partly-done-items-and-doc-fixes.md`)

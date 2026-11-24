@@ -61,7 +61,7 @@ Items marked **P1** target those directly.
 | # | Item | What to do | Priority | Status |
 |---|---|---|---|---|
 | 18 | Shared pipeline template | One reusable Jenkinsfile for every project: build, test, SonarQube scan, quality-gate check. | P2 | Done: `jenkins/CI.JenkinsFile` + `PIPELINE_TEMPLATE.md` |
-| 19 | Fail on quality gate | A failed SonarQube quality gate fails the build. | P2 | Done: `CI.JenkinsFile` errors when the gate is not `OK` (needs the SonarQube webhook, backlog J12, or the wait times out) |
+| 19 | Fail on quality gate | A failed SonarQube quality gate fails the build. | P2 | Done: `CI.JenkinsFile` errors when the gate is not `OK` (the SonarQube webhook, J12, returns the result in about 1 s) |
 | 20 | Scanner templates | A `sonar-project.properties` template for each language in use, including coverage report paths. | P2 | Done: `jenkins/sonar-templates/` (Node/TS, Python, Maven); no Dart analyzer in SonarQube Community |
 | 21 | Coverage by default | Make every template produce a coverage report, otherwise the 80% gate condition always fails. | P2 | Partly: `CI.JenkinsFile` sends `coverage/lcov.info` when present and warns when missing; each project's test script must still produce it |
 | 22 | Build caching | Cache dependency downloads (Maven, npm, pip) between builds to keep builds fast. | P3 | Idea |

@@ -77,8 +77,10 @@ silently empty. See `README.md` → "Running tools in containers".
   from `jenkins/sonar-templates/`). Without one it keeps the old defaults (`src`, the same
   exclusions, now quoted so the shell can't expand the globs) and adds
   `coverage/lcov.info` when it exists, warning when it doesn't.
-- A quality gate that isn't `OK` already fails the build. The SonarQube webhook (backlog
-  J12) is still needed, otherwise `waitForQualityGate()` times out.
+- A quality gate that isn't `OK` already fails the build. A global, HMAC-signed SonarQube
+  webhook (`Jenkins` → `http://jenkins:8080/sonarqube-webhook/`, Jenkins credential
+  `sonarqube-webhook-secret` on `SonarServer`) returns the gate result in about 1 s
+  (J12, 2026-11-24).
 
 ## Changes (2026-11-19)
 

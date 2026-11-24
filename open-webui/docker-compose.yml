@@ -14,6 +14,11 @@ services:
     volumes:
       - ./data:/app/backend/data
     restart: unless-stopped
+    # Idle peak ~790 MiB (2026-11-24); RAG embeddings and uploads spike well above idle.
+    deploy:
+      resources:
+        limits:
+          memory: 2G
     healthcheck:
       test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/health"]
       interval: 30s

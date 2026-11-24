@@ -7,6 +7,11 @@ services:
       - "127.0.0.1:27017:27017"
     volumes:
       - mongodb-data:/data/db
+    # Measured peak ~250 MiB (2026-11-24). WiredTiger sizes its cache from this limit.
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
